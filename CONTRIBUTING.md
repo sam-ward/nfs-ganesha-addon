@@ -30,14 +30,6 @@ Open an issue with:
 - Use case / why it would be useful
 - Example configuration (if applicable)
 
-## Code Style
-
-- Use clear, descriptive variable names
-- Comment complex logic
-- Follow existing code style
-- Test changes before submitting
-- Update documentation when adding features
-
 ## Testing
 
 Before submitting a PR:
@@ -50,7 +42,6 @@ Before submitting a PR:
 ## Documentation
 
 When adding features:
-- Update DOCS.md with new configuration options
 - Update README.md if user-facing changes
 - Add entry to CHANGELOG.md
 - Include examples where helpful
