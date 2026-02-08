@@ -1,4 +1,4 @@
-# Home Assistant Add-on: NFS Server (Ganesha)
+# Home Assistant App: NFS Server (Ganesha)
 
 Expose Home Assistant folders via NFS (Network File System) using nfs-ganesha.
 
@@ -10,7 +10,7 @@ Expose Home Assistant folders via NFS (Network File System) using nfs-ganesha.
 
 ## About
 
-This add-on runs nfs-ganesha to share Home Assistant directories over your network using NFS. It supports both NFSv3 and NFSv4 protocols.
+This app runs nfs-ganesha to share Home Assistant directories over your network using NFS. It supports both NFSv3 and NFSv4 protocols.
 
 ## Features
 

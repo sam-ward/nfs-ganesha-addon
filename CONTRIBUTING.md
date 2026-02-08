@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for considering contributing to the NFS Ganesha Home Assistant Add-on!
+Thank you for considering contributing to the NFS Ganesha Home Assistant App!
 
 ## How to Contribute
 
@@ -19,9 +19,9 @@ Use the GitHub issue tracker and provide:
 - Steps to reproduce
 - Expected vs actual behavior
 - Home Assistant version
-- Add-on version
+- App version
 - Architecture (amd64/armv7/etc)
-- Relevant logs from the add-on
+- Relevant logs from the app
 
 ## Suggesting Features
 
@@ -33,7 +33,7 @@ Open an issue with:
 ## Testing
 
 Before submitting a PR:
-1. Test the add-on builds successfully
+1. Test the app builds successfully
 2. Test on at least one architecture
 3. Verify all configuration options work
 4. Check logs for errors

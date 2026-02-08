@@ -1,4 +1,4 @@
-# Home Assistant NFS Server (Ganesha) Add-on
+# Home Assistant NFS Server (Ganesha) App
 
 [![GitHub Release][releases-shield]][releases]
 [![License][license-shield]](LICENSE)
@@ -18,18 +18,18 @@ Expose Home Assistant folders via NFS using nfs-ganesha in userspace.
 
 1. Click the button below to add this repository to your Home Assistant instance:
 
-   [![Open your Home Assistant instance and show the add add-on repository dialog with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https://github.com/sam-ward/nfs-ganesha-addon)
+   [![Open your Home Assistant instance and show the add app repository dialog with a specific repository URL pre-filled.](https://my.home-assistant.io/badges/supervisor_add_addon_repository.svg)](https://my.home-assistant.io/redirect/supervisor_add_addon_repository/?repository_url=https://github.com/sam-ward/nfs-ganesha-addon)
 
    Or manually add this repository in Home Assistant:
-   - Go to **Settings** → **Add-ons** → **Add-on Store**
+   - Go to **Settings** → **Apps** → **App Store**
    - Click the three dots (⋮) in the top right
    - Select **Repositories**
    - Add: `https://github.com/sam-ward/nfs-ganesha-addon`
 
-2. Find "NFS Server (Ganesha)" in the add-on store
+2. Find "NFS Server (Ganesha)" in the app store
 3. Click "Install"
-4. Configure the add-on (see Configuration section below)
-5. Start the add-on
+4. Configure the app (see Configuration section below)
+5. Start the app
 
 ## Configuration
 
@@ -85,8 +85,8 @@ List of Home Assistant folders to export via NFS. Select one or more from:
 
 - `config` - Home Assistant configuration
 - `ssl` - SSL certificates
-- `addons` - Local add-ons
-- `addon_configs` - Add-on configuration files
+- `addons` - Local apps
+- `addon_configs` - App configuration files
 - `backup` - Backups
 - `share` - Shared files
 - `media` - Media files
@@ -150,7 +150,7 @@ All NFS operations are mapped to root on the server side, so you should have ful
 
 ### showmount doesn't work
 
-This is expected. The add-on runs in host network mode where `showmount` may not function. Use NFSv4 direct mounting instead:
+This is expected. The app runs in host network mode where `showmount` may not function. Use NFSv4 direct mounting instead:
 
 ```bash
 # List available exports by mounting root

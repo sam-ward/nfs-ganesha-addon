@@ -1,11 +1,11 @@
-# Home Assistant Add-on: NFS Server (Ganesha)
+# Home Assistant App: NFS Server (Ganesha)
 
 ## Installation
 
 1. Add this repository to your Home Assistant instance
-2. Install the "NFS Server (Ganesha)" add-on
-3. Configure the add-on (see Configuration below)
-4. Start the add-on
+2. Install the "NFS Server (Ganesha)" app
+3. Configure the app (see Configuration below)
+4. Start the app
 
 ## Configuration
 
@@ -68,8 +68,8 @@ Select which Home Assistant folders to export via NFS.
 **Available folders:**
 - `config` - Home Assistant configuration files
 - `ssl` - SSL certificates
-- `addons` - Local add-ons
-- `addon_configs` - Add-on configuration files
+- `addons` - Local apps
+- `addon_configs` - App configuration files
 - `backup` - Backup files
 - `share` - Shared files
 - `media` - Media files
@@ -196,19 +196,19 @@ umount Z:
 
 1. **Is the folder exported?**
    - Verify the folder is in your `export_folders` configuration
-   - Restart the add-on after changing configuration
+   - Restart the app after changing configuration
 
 2. **Is your IP authorized?**
    - Check your `authorized_ips` includes your client IP
    - Find your client IP: `ip addr show` (Linux), `ifconfig` (macOS), `ipconfig` (Windows)
 
 3. **Check addon logs:**
-   - Settings → Add-ons → NFS Server (Ganesha) → Logs
+   - Settings → Apps → NFS Server (Ganesha) → Logs
    - Look for errors or warnings
 
 ### `showmount -e` doesn't work
 
-**This is expected.** The add-on runs in host network mode where `showmount` may not function properly.
+**This is expected.** The app runs in host network mode where `showmount` may not function properly.
 
 **Workaround:** Mount the root directory to see all available exports:
 ```bash
@@ -221,7 +221,7 @@ umount /mnt/test
 
 **Possible causes:**
 
-1. **Add-on not running** - Check Home Assistant add-on status
+1. **App not running** - Check Home Assistant app status
 2. **Firewall blocking** - Check network firewall for port 2049
 3. **Wrong IP address** - Verify Home Assistant IP address
 
@@ -241,7 +241,7 @@ nc -zv <HA_IP> 2049
 **Solution:**
 1. Find your client IP
 2. Add it to `authorized_ips` in the addon configuration
-3. Restart the add-on
+3. Restart the app
 
 ### Mount hangs or times out
 
@@ -320,4 +320,4 @@ MIT License - see LICENSE file for details.
 
 ## Credits
 
-This add-on uses [nfs-ganesha](https://github.com/nfs-ganesha/nfs-ganesha), a userspace NFS server.
+This app uses [nfs-ganesha](https://github.com/nfs-ganesha/nfs-ganesha), a userspace NFS server.

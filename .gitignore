@@ -16,3 +16,7 @@ test/
 # Build artifacts
 *.tar.gz
 *.zip
+
+# Project files
+PUBLISHING.md
+QUICKREF.md
