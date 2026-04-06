@@ -51,6 +51,7 @@ export_folders:
 List of IP addresses or CIDR subnets allowed to access the NFS shares.
 
 **Default:** All private network ranges
+
 ```yaml
 authorized_ips:
   - "10.0.0.0/8"
@@ -59,6 +60,7 @@ authorized_ips:
 ```
 
 **Examples:**
+
 ```yaml
 # Single IP
 authorized_ips:
@@ -92,6 +94,7 @@ List of Home Assistant folders to export via NFS. Select one or more from:
 - `media` - Media files
 
 **Default:** All folders
+
 ```yaml
 export_folders:
   - config
@@ -108,6 +111,7 @@ export_folders:
 ### Linux
 
 **NFSv4 (recommended):**
+
 ```bash
 # Mount all exports
 sudo mount -t nfs4 <HA_IP>:/ /mnt/homeassistant
@@ -117,7 +121,8 @@ sudo mount -t nfs4 <HA_IP>:/config /mnt/ha-config
 ```
 
 **Make permanent** - Add to `/etc/fstab`:
-```
+
+```text
 <HA_IP>:/  /mnt/homeassistant  nfs4  defaults,_netdev  0  0
 ```
 
@@ -134,6 +139,7 @@ sudo mount -t nfs -o nfsvers=4 <HA_IP>:/config /Volumes/ha-config
    - Search for "NFS" and install "Services for NFS"
 
 2. Mount the share:
+
 ```cmd
 mount -o anon \\<HA_IP>\config Z:
 ```

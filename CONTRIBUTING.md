@@ -15,6 +15,7 @@ Thank you for considering contributing to the NFS Ganesha Home Assistant App!
 ## Reporting Bugs
 
 Use the GitHub issue tracker and provide:
+
 - Clear description of the issue
 - Steps to reproduce
 - Expected vs actual behavior
@@ -26,6 +27,7 @@ Use the GitHub issue tracker and provide:
 ## Suggesting Features
 
 Open an issue with:
+
 - Clear description of the feature
 - Use case / why it would be useful
 - Example configuration (if applicable)
@@ -33,6 +35,7 @@ Open an issue with:
 ## Testing
 
 Before submitting a PR:
+
 1. Test the app builds successfully
 2. Test on at least one architecture
 3. Verify all configuration options work
@@ -42,6 +45,7 @@ Before submitting a PR:
 ## Documentation
 
 When adding features:
+
 - Update README.md if user-facing changes
 - Add entry to CHANGELOG.md
 - Include examples where helpful

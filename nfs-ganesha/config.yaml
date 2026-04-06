@@ -10,10 +10,18 @@ arch:
   - armhf
   - armv7
   - i386
-boot: auto
+# Optional defaults (left commented to satisfy the add-on linter):
+# https://developers.home-assistant.io/docs/add-ons/configuration/
+# stage: stable
+# auth_api: false
+# hassio_api: false
+# homeassistant_api: false
+# apparmor: true
+# startup: application
+# boot: auto
 init: false
 map:
-  - config:rw
+  - homeassistant_config:rw
   - ssl:rw
   - addons:rw
   - all_addon_configs:rw

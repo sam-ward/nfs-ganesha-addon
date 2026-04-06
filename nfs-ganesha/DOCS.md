@@ -53,6 +53,7 @@ authorized_ips:
 ```
 
 **Private Network Ranges (default):**
+
 - `10.0.0.0/8` - Class A (10.0.0.0 - 10.255.255.255)
 - `172.16.0.0/12` - Class B (172.16.0.0 - 172.31.255.255)
 - `192.168.0.0/16` - Class C (192.168.0.0 - 192.168.255.255)
@@ -66,6 +67,7 @@ authorized_ips:
 Select which Home Assistant folders to export via NFS.
 
 **Available folders:**
+
 - `config` - Home Assistant configuration files
 - `ssl` - SSL certificates
 - `addons` - Local apps
@@ -104,18 +106,21 @@ export_folders:
 #### NFSv4 (Recommended)
 
 **Mount all exports:**
+
 ```bash
 sudo mkdir -p /mnt/homeassistant
 sudo mount -t nfs4 <HA_IP>:/ /mnt/homeassistant
 ```
 
 You can then access:
+
 - `/mnt/homeassistant/config`
 - `/mnt/homeassistant/backup`
 - `/mnt/homeassistant/media`
 - etc.
 
 **Mount individual export:**
+
 ```bash
 sudo mkdir -p /mnt/ha-config
 sudo mount -t nfs4 <HA_IP>:/config /mnt/ha-config
@@ -162,12 +167,14 @@ sudo umount /Volumes/homeassistant
 #### Prerequisites
 
 Enable NFS Client:
+
 1. Open Settings → Apps → Optional Features
 2. Click "Add a feature"
 3. Search for "Services for NFS"
 4. Install "Services for NFS" (requires reboot)
 
 Or via PowerShell (as Administrator):
+
 ```powershell
 Enable-WindowsOptionalFeature -Online -FeatureName ServicesForNFS-ClientOnly
 ```
@@ -211,6 +218,7 @@ umount Z:
 **This is expected.** The app runs in host network mode where `showmount` may not function properly.
 
 **Workaround:** Mount the root directory to see all available exports:
+
 ```bash
 mount -t nfs4 <HA_IP>:/ /mnt/test
 ls /mnt/test  # Shows all exported folders
@@ -226,6 +234,7 @@ umount /mnt/test
 3. **Wrong IP address** - Verify Home Assistant IP address
 
 **Debug:**
+
 ```bash
 # Check if port 2049 is accessible
 telnet <HA_IP> 2049
@@ -239,6 +248,7 @@ nc -zv <HA_IP> 2049
 **Cause:** Your client IP is not in the `authorized_ips` list.
 
 **Solution:**
+
 1. Find your client IP
 2. Add it to `authorized_ips` in the addon configuration
 3. Restart the app
@@ -248,6 +258,7 @@ nc -zv <HA_IP> 2049
 **Cause:** Network issues or firewall blocking NFS traffic.
 
 **Solution:**
+
 - Ensure client and server are on same network/VLAN
 - Check firewall allows port 2049 (TCP/UDP)
 - Try adding mount options: `-o soft,timeo=10`
@@ -257,6 +268,7 @@ nc -zv <HA_IP> 2049
 **Cause:** The NFS server was restarted while files were mounted.
 
 **Solution:**
+
 ```bash
 # Force unmount
 sudo umount -f /mnt/homeassistant
@@ -272,7 +284,8 @@ sudo mount -t nfs4 <HA_IP>:/ /mnt/homeassistant
 
 1. **Mount the root (`/`)** instead of individual exports to reduce overhead
 2. **Use wired connections** for best performance
-4. **Adjust buffer sizes** with mount options if needed:
+3. **Adjust buffer sizes** with mount options if needed:
+
    ```bash
    mount -t nfs4 -o rsize=1048576,wsize=1048576 <HA_IP>:/ /mnt/ha
    ```
