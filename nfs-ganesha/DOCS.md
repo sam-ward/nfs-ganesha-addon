@@ -53,6 +53,7 @@ authorized_ips:
 ```
 
 **Private Network Ranges (default):**
+
 - `10.0.0.0/8` - Class A (10.0.0.0 - 10.255.255.255)
 - `172.16.0.0/12` - Class B (172.16.0.0 - 172.31.255.255)
 - `192.168.0.0/16` - Class C (192.168.0.0 - 192.168.255.255)
@@ -66,6 +67,7 @@ authorized_ips:
 Select which Home Assistant folders to export via NFS.
 
 **Available folders:**
+
 - `config` - Home Assistant configuration files
 - `ssl` - SSL certificates
 - `addons` - Local apps
@@ -97,6 +99,40 @@ export_folders:
   - media
 ```
 
+### Option: `log_level`
+
+**Required:** No  
+**Type:** Enum (dropdown)  
+**Default:** `EVENT`
+
+Controls how verbose the NFS-Ganesha server log is. The log is visible under **Settings → Apps → NFS Server (Ganesha) →
+Logs**.
+
+**Allowed values** (quietest to most verbose):
+
+| Value                          | Use                                                    |
+|--------------------------------|--------------------------------------------------------|
+| `NULL`, `FATAL`, `MAJ`, `CRIT` | Only serious problems                                  |
+| `WARN`                         | Warnings and above                                     |
+| `EVENT`                        | **Default** — normal operational messages              |
+| `INFO`                         | More detail                                            |
+| `DEBUG`, `MID_DEBUG`           | Troubleshooting                                        |
+| `FULL_DEBUG`                   | Everything (very noisy — thousands of lines per start) |
+
+Keep `EVENT` for normal use. Raise to `DEBUG` or `FULL_DEBUG` only while diagnosing
+a problem (for example, a client that mounts but cannot read files), then set it
+back. **Restart the app after changing this value** so the new level takes effect.
+
+**Examples:**
+
+```yaml
+# Normal operation (default)
+log_level: EVENT
+
+# Troubleshooting a mount/read issue
+log_level: FULL_DEBUG
+```
+
 ## Mounting from Clients
 
 ### Linux
@@ -104,18 +140,21 @@ export_folders:
 #### NFSv4 (Recommended)
 
 **Mount all exports:**
+
 ```bash
 sudo mkdir -p /mnt/homeassistant
 sudo mount -t nfs4 <HA_IP>:/ /mnt/homeassistant
 ```
 
 You can then access:
+
 - `/mnt/homeassistant/config`
 - `/mnt/homeassistant/backup`
 - `/mnt/homeassistant/media`
 - etc.
 
 **Mount individual export:**
+
 ```bash
 sudo mkdir -p /mnt/ha-config
 sudo mount -t nfs4 <HA_IP>:/config /mnt/ha-config
@@ -155,19 +194,22 @@ sudo mount -t nfs -o nfsvers=4 <HA_IP>:/config /Volumes/homeassistant
 sudo umount /Volumes/homeassistant
 ```
 
-**Note:** macOS Finder may not show NFS mounts in the sidebar, but they're accessible via Terminal or by navigating to `/Volumes/`.
+**Note:** macOS Finder may not show NFS mounts in the sidebar, but they're accessible via Terminal or by navigating to
+`/Volumes/`.
 
 ### Windows
 
 #### Prerequisites
 
 Enable NFS Client:
+
 1. Open Settings → Apps → Optional Features
 2. Click "Add a feature"
 3. Search for "Services for NFS"
 4. Install "Services for NFS" (requires reboot)
 
 Or via PowerShell (as Administrator):
+
 ```powershell
 Enable-WindowsOptionalFeature -Online -FeatureName ServicesForNFS-ClientOnly
 ```
@@ -195,22 +237,23 @@ umount Z:
 **Check these:**
 
 1. **Is the folder exported?**
-   - Verify the folder is in your `export_folders` configuration
-   - Restart the app after changing configuration
+    - Verify the folder is in your `export_folders` configuration
+    - Restart the app after changing configuration
 
 2. **Is your IP authorized?**
-   - Check your `authorized_ips` includes your client IP
-   - Find your client IP: `ip addr show` (Linux), `ifconfig` (macOS), `ipconfig` (Windows)
+    - Check your `authorized_ips` includes your client IP
+    - Find your client IP: `ip addr show` (Linux), `ifconfig` (macOS), `ipconfig` (Windows)
 
 3. **Check addon logs:**
-   - Settings → Apps → NFS Server (Ganesha) → Logs
-   - Look for errors or warnings
+    - Settings → Apps → NFS Server (Ganesha) → Logs
+    - Look for errors or warnings
 
 ### `showmount -e` doesn't work
 
 **This is expected.** The app runs in host network mode where `showmount` may not function properly.
 
 **Workaround:** Mount the root directory to see all available exports:
+
 ```bash
 mount -t nfs4 <HA_IP>:/ /mnt/test
 ls /mnt/test  # Shows all exported folders
@@ -226,6 +269,7 @@ umount /mnt/test
 3. **Wrong IP address** - Verify Home Assistant IP address
 
 **Debug:**
+
 ```bash
 # Check if port 2049 is accessible
 telnet <HA_IP> 2049
@@ -239,6 +283,7 @@ nc -zv <HA_IP> 2049
 **Cause:** Your client IP is not in the `authorized_ips` list.
 
 **Solution:**
+
 1. Find your client IP
 2. Add it to `authorized_ips` in the addon configuration
 3. Restart the app
@@ -248,6 +293,7 @@ nc -zv <HA_IP> 2049
 **Cause:** Network issues or firewall blocking NFS traffic.
 
 **Solution:**
+
 - Ensure client and server are on same network/VLAN
 - Check firewall allows port 2049 (TCP/UDP)
 - Try adding mount options: `-o soft,timeo=10`
@@ -257,6 +303,7 @@ nc -zv <HA_IP> 2049
 **Cause:** The NFS server was restarted while files were mounted.
 
 **Solution:**
+
 ```bash
 # Force unmount
 sudo umount -f /mnt/homeassistant

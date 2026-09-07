@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 # Install Ganesha, utils, and dependencies
 # We also install dbus and rpcbind which are often required by Ganesha

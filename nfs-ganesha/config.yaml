@@ -38,8 +38,10 @@ options:
     - backup
     - share
     - media
+  log_level: EVENT
 schema:
   authorized_ips:
     - str
   export_folders:
     - match(config|ssl|addons|addon_configs|backup|share|media)
+  log_level: list(NULL|FATAL|MAJ|CRIT|WARN|EVENT|INFO|DEBUG|MID_DEBUG|FULL_DEBUG)?

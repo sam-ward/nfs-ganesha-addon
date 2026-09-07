@@ -103,6 +103,27 @@ export_folders:
   - media
 ```
 
+#### `log_level` (optional)
+
+Verbosity of the NFS-Ganesha server log (shown in the app's **Logs** tab).
+
+**Default:** `EVENT` (normal operation)
+
+Allowed values, quietest to most verbose: `NULL`, `FATAL`, `MAJ`, `CRIT`, `WARN`,
+`EVENT`, `INFO`, `DEBUG`, `MID_DEBUG`, `FULL_DEBUG`.
+
+Leave it at `EVENT` for day-to-day use. Raise it to `DEBUG` or `FULL_DEBUG` only
+when troubleshooting a mount or playback problem — `FULL_DEBUG` produces thousands
+of lines per start. Restart the app after changing the value.
+
+```yaml
+# Normal operation (default)
+log_level: EVENT
+
+# Troubleshooting
+log_level: FULL_DEBUG
+```
+
 ## Mounting from Clients
 
 ### Linux
