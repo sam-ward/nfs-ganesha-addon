@@ -1,0 +1,1 @@
+{"authorized_ips":["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16"],"export_folders":["config","ssl","addons","addon_configs","backup","share","media"]}
