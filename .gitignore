@@ -20,3 +20,7 @@ test/
 # Project files
 PUBLISHING.md
 QUICKREF.md
+
+# Functional test scratch and logs
+.test-work/
+.test-logs/
