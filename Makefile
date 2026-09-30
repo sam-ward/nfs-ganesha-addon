@@ -17,7 +17,7 @@ RUN_PRIV = docker run --rm -v "$(CURDIR):$(CURDIR)" -w "$(CURDIR)" \
 	$(TOOLBOX)
 endif
 
-.PHONY: toolbox lint unit functional test
+.PHONY: toolbox lint unit functional test clean
 
 toolbox:
 ifneq ($(IN_TOOLBOX),1)
@@ -37,3 +37,8 @@ functional: toolbox
 	$(RUN_PRIV) bats tests/functional
 
 test: lint unit functional
+
+# Functional tests run as root; remove anything an interrupted run left behind.
+clean: toolbox
+	-docker rm -f nfs-ganesha-functional > /dev/null 2>&1
+	$(RUN_PRIV) rm -rf .test-work .test-logs
