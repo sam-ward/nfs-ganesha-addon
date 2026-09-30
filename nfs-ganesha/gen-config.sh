@@ -6,14 +6,22 @@ set -e
 CONFIG_PATH=${1:-/data/options.json}
 ROOT=${2:-/}
 
-# Read the authorized_ips array and join with commas for Ganesha
-AUTHORIZED_IPS=$(jq --raw-output '.authorized_ips | join(",")' "$CONFIG_PATH")
+# Read the authorized_ips array (blank entries dropped) and join with commas for Ganesha
+AUTHORIZED_IPS=$(jq --raw-output \
+    '[.authorized_ips[]? | strings | gsub("^\\s+|\\s+$"; "") | select(length > 0)] | join(",")' \
+    "$CONFIG_PATH")
 
 # Read the export_folders array
-EXPORT_FOLDERS=$(jq --raw-output '.export_folders[]' "$CONFIG_PATH")
+EXPORT_FOLDERS=$(jq --raw-output '.export_folders[]? | strings' "$CONFIG_PATH")
 
 echo "[NFS] Authorized IPs: ${AUTHORIZED_IPS}" >&2
 echo "[NFS] Export folders: $(jq --raw-output '.export_folders | join(", ")' "$CONFIG_PATH")" >&2
+
+# An empty client list would give "Clients = ;", so refuse rather than guess.
+if [ -z "$AUTHORIZED_IPS" ]; then
+    echo "[ERROR] authorized_ips is empty; add at least one IP or subnet. Refusing to start." >&2
+    exit 1
+fi
 
 cat <<EOF
 ###################################################
@@ -62,6 +70,15 @@ EOF
 ID=10
 
 while IFS= read -r FOLDER; do
+    # Only the folders config.yaml maps. An empty name would export "/" itself.
+    case "$FOLDER" in
+        config|ssl|addons|addon_configs|backup|share|media) ;;
+        "") continue ;;
+        *)
+            echo "[WARN] Unknown export folder '$FOLDER', skipping..." >&2
+            continue
+            ;;
+    esac
     DIR="/$FOLDER"
 
     if [ -d "${ROOT%/}$DIR" ]; then
@@ -89,3 +106,8 @@ EOF
         echo "[WARN] Directory $DIR does not exist, skipping..." >&2
     fi
 done <<< "$EXPORT_FOLDERS"
+
+if [ "$ID" -eq 10 ]; then
+    echo "[ERROR] No export folders to share; select at least one in export_folders. Refusing to start." >&2
+    exit 1
+fi

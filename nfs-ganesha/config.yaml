@@ -1,5 +1,5 @@
 name: NFS Server (Ganesha)
-version: "1.2.0"
+version: "1.2.1"
 slug: nfs_ganesha
 description: Expose Home Assistant folders via NFS using nfs-ganesha
 url: https://github.com/sam-ward/nfs-ganesha-addon

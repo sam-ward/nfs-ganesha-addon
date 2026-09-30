@@ -46,12 +46,68 @@ gen() { bash "$GEN" "$BATS_TEST_DIRNAME/fixtures/$1.json" "$ROOT"; }
     refute_output --regexp 'Protocols = [^4]'
 }
 
+# Runs the generator on inline JSON options (for cases without a golden file).
+gen_json() {
+    printf '%s' "$1" > "$BATS_TEST_TMPDIR/options.json"
+    bash "$GEN" "$BATS_TEST_TMPDIR/options.json" "$ROOT"
+}
+
 @test "missing folder is skipped with a warning, others still exported" {
-    run --separate-stderr gen missing-folder
+    rmdir "$ROOT/media"
+    run --separate-stderr gen_json '{"authorized_ips":["192.168.1.0/24"],"export_folders":["config","media"]}'
     assert_success
     assert_equal "$(grep -c '^EXPORT$' <<< "$output")" 1
     assert_output --partial 'Path = "/config";'
-    [[ "$stderr" == *"/nope does not exist"* ]]
+    [[ "$stderr" == *"/media does not exist"* ]]
+}
+
+@test "security: empty export_folders refuses to start instead of exporting /" {
+    run --separate-stderr gen_json '{"authorized_ips":["192.168.1.0/24"],"export_folders":[]}'
+    assert_failure
+    refute_output --partial 'Path = "/";'
+    [[ "$stderr" == *"No export folders"* ]]
+}
+
+@test "security: empty folder names are never exported as /" {
+    run --separate-stderr gen_json '{"authorized_ips":["192.168.1.0/24"],"export_folders":["","config"]}'
+    assert_success
+    refute_output --partial 'Path = "/";'
+    assert_equal "$(grep -c '^EXPORT$' <<< "$output")" 1
+    assert_output --partial 'Path = "/config";'
+}
+
+@test "security: folder names outside the allowed list are rejected" {
+    run --separate-stderr gen_json '{"authorized_ips":["192.168.1.0/24"],"export_folders":["../etc","config"]}'
+    assert_success
+    refute_output --partial 'etc'
+    assert_equal "$(grep -c '^EXPORT$' <<< "$output")" 1
+    [[ "$stderr" == *"Unknown export folder"* ]]
+}
+
+@test "no existing folders refuses to start" {
+    rmdir "$ROOT/media"
+    run --separate-stderr gen_json '{"authorized_ips":["192.168.1.0/24"],"export_folders":["media"]}'
+    assert_failure
+    [[ "$stderr" == *"No export folders"* ]]
+}
+
+@test "security: empty authorized_ips refuses to start" {
+    run --separate-stderr gen_json '{"authorized_ips":[],"export_folders":["config"]}'
+    assert_failure
+    refute_output --partial 'Clients = ;'
+    [[ "$stderr" == *"authorized_ips"* ]]
+}
+
+@test "blank authorized_ips entries are dropped" {
+    run --separate-stderr gen_json '{"authorized_ips":["", " 10.0.0.5 ", "192.168.1.0/24"],"export_folders":["config"]}'
+    assert_success
+    assert_output --partial 'Clients = 10.0.0.5,192.168.1.0/24;'
+}
+
+@test "security: only blank authorized_ips refuses to start" {
+    run --separate-stderr gen_json '{"authorized_ips":["", "  "],"export_folders":["config"]}'
+    assert_failure
+    [[ "$stderr" == *"authorized_ips"* ]]
 }
 
 @test "export ids are unique and sequential from 10" {
