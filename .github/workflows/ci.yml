@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: HA app linter
+        uses: frenck/action-app-linter@v2
+        with: {path: ./nfs-ganesha}
+      - run: make lint
+
+  unit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - run: make unit
+
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      addon: ${{ steps.filter.outputs.addon }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            addon:
+              - 'nfs-ganesha/**'
+              - 'tests/**'
+              - 'Makefile'
+              - '.github/workflows/**'
+
+  functional:
+    needs: [changes]
+    # Docs-only PRs skip the NFS tests; pushes to main always run them.
+    if: needs.changes.outputs.addon == 'true' || github.event_name == 'push'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: amd64, os: ubuntu-24.04}
+          - {arch: aarch64, os: ubuntu-24.04-arm}
+    name: functional (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Port 2049 is free
+        run: "! ss -tln | grep -E ':2049\\b'"
+      - run: make functional
+      - if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: addon-log-${{ matrix.arch }}
+          path: .test-logs/addon.log
+          if-no-files-found: ignore
