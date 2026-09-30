@@ -119,6 +119,28 @@ PY
     start_addon "$AUTHORISED"   # restore for any later tests
 }
 
+@test "add-on refuses to start with no export folders (never exports /)" {
+    stop_addon
+    run start_addon '{"authorized_ips":["127.0.0.1"],"export_folders":[]}'
+    assert_failure
+    run docker logs "$NAME"
+    assert_output --partial "No export folders"
+    run grep -x '\[NFS\] Exporting: /' <<< "$output"
+    assert_failure
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+@test "add-on refuses to start with empty authorized_ips" {
+    stop_addon
+    run start_addon '{"authorized_ips":[],"export_folders":["config"]}'
+    assert_failure
+    run docker logs "$NAME"
+    assert_output --partial "authorized_ips is empty"
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
 @test "harness refuses to start when something else holds port 2049" {
     # Otherwise the readiness probe would accept a foreign server and the
     # refusal tests would pass against the wrong server.
