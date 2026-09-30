@@ -1,0 +1,3 @@
+ignored:
+  # Pinning Debian package versions breaks the build whenever Debian ships an update.
+  - DL3008

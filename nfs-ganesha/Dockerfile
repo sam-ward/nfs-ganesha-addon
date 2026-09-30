@@ -2,6 +2,8 @@ FROM debian:bookworm-slim
 
 # Install Ganesha, utils, and dependencies
 # We also install dbus and rpcbind which are often required by Ganesha
+# Recommends kept until functional tests show they're not needed.
+# hadolint ignore=DL3015
 RUN apt-get update && apt-get install -y \
     nfs-ganesha \
     nfs-ganesha-vfs \
