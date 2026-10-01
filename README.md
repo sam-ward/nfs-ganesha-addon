@@ -159,12 +159,6 @@ ls /mnt/test
 umount /mnt/test
 ```
 
-### Can't write to files
-
-1. Ensure the folder is in `export_folders`
-2. Check addon logs for any errors
-3. Verify your client IP is in `authorized_ips`
-
 ## Known Limitations
 
 - `showmount -e` command may not work due to rpcbind limitations in container mode
@@ -173,7 +167,7 @@ umount /mnt/test
 ## Support
 
 - [Open an issue](https://github.com/sam-ward/nfs-ganesha-addon/issues)
-- [Discussions](https://github.com/sam-ward/nfs-ganesha-addon/discussions)
+- [Discussion](https://community.home-assistant.io/t/new-haos-app-nfs-server/984352) (Home Assistant Community thread)
 - [Home Assistant Community](https://community.home-assistant.io/)
 
 ## Contributing
