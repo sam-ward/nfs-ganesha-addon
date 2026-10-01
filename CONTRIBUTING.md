@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for considering contributing to the NFS Ganesha Home Assistant App!
+Thank you for considering contributing to the NFS Ganesha Home Assistant App
 
 ## How to Contribute
 
@@ -48,4 +48,4 @@ When adding features:
 
 ## Questions?
 
-Feel free to open a discussion or issue if you have questions!
+Feel free to open an issue, or ask in the [Home Assistant Community thread](https://community.home-assistant.io/t/new-haos-app-nfs-server/984352), if you have questions!

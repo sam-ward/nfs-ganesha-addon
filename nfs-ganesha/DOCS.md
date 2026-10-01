@@ -272,7 +272,7 @@ sudo mount -t nfs4 <HA_IP>:/ /mnt/homeassistant
 
 1. **Mount the root (`/`)** instead of individual exports to reduce overhead
 2. **Use wired connections** for best performance
-4. **Adjust buffer sizes** with mount options if needed:
+3. **Adjust buffer sizes** with mount options if needed:
    ```bash
    mount -t nfs4 -o rsize=1048576,wsize=1048576 <HA_IP>:/ /mnt/ha
    ```
@@ -310,7 +310,7 @@ sudo mount -t nfs4 <HA_IP>:/backup /mnt/ha-backup
 ## Support
 
 - [Report bugs](https://github.com/sam-ward/nfs-ganesha-addon/issues)
-- [Ask questions](https://github.com/sam-ward/nfs-ganesha-addon/discussions)
+- [Ask questions](https://community.home-assistant.io/t/new-haos-app-nfs-server/984352) (Home Assistant Community thread)
 - [Home Assistant Community](https://community.home-assistant.io/)
 
 ## License
