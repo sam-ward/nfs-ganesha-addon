@@ -37,6 +37,22 @@ for_version() {
 @test "NFSv4.1 read/write/rename/delete" { for_version 4.1; }
 @test "NFSv4.2 read/write/rename/delete" { for_version 4.2; }
 
+@test "no Remote I/O error on the mount root right after writes (NFSv4.1/4.2)" {
+    skip "Ganesha 4.3 and 6.5 return EREMOTEIO here; fixed by 9.x from trixie-backports"
+    local v i fails
+    for v in 4.1 4.2; do
+        fails=0
+        for i in 1 2 3 4 5; do
+            mount_export /config "vers=$v"
+            head -c 20M /dev/urandom > "$MNT/rio-$i.bin"
+            mountpoint -q "$MNT" || fails=$((fails + 1))
+            rm -f "$MNT/rio-$i.bin"
+            unmount_export
+        done
+        (( fails == 0 )) || fail "vers=$v: Remote I/O error in $fails/5 attempts"
+    done
+}
+
 @test "NFSv4.2 COPY (server-side copy) is handled by the server" {
     # Ganesha 4.3 (bookworm) returns an error for COPY and the Linux client then
     # copies the data itself, so only the op counters reveal it.
