@@ -19,6 +19,30 @@ reset_log() {
     chown -R "$REPO_OWNER" "$LOG_DIR"
 }
 
+# Capabilities config.yaml grants the add-on: the single source of truth.
+addon_caps() {
+    python3 -c 'import sys, yaml; print("\n".join(yaml.safe_load(open(sys.argv[1]))["privileged"]))' \
+        "$REPO_ROOT/nfs-ganesha/config.yaml"
+}
+
+# AppArmor as config.yaml sets it: unconfined only if it says `apparmor: false`;
+# otherwise Docker's default profile, the nearest local stand-in for the Supervisor's.
+addon_apparmor_enabled() {
+    python3 -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1])).get("apparmor", True))' \
+        "$REPO_ROOT/nfs-ganesha/config.yaml"
+}
+
+# docker run arguments for the add-on, minus any capability named in $DROP_CAPS.
+addon_run_args() {
+    local cap
+    printf '%s\n' --network host
+    [ "$(addon_apparmor_enabled)" = True ] || printf '%s\n' --security-opt apparmor=unconfined
+    for cap in $(addon_caps); do
+        [[ " ${DROP_CAPS:-} " == *" $cap "* ]] || printf '%s\n' --cap-add "$cap"
+    done
+    printf '%s\n' -v "$WORK/data:/data" -v "$WORK/config:/config" -v "$WORK/media:/media"
+}
+
 start_addon() {
     # WORK is bind-mounted into the add-on container by the *host* daemon, so it
     # must be under the repo (same path on host and in the toolbox). Gitignored.
@@ -34,12 +58,10 @@ start_addon() {
         echo "port 2049 is already in use on this host (kernel nfsd or another container?)" >&2
         return 1
     fi
-    # Capabilities mirror config.yaml's privileged list. Never use --privileged here.
-    docker run -d --name "$NAME" --network host \
-        --cap-add SYS_ADMIN --cap-add DAC_READ_SEARCH \
-        --security-opt apparmor=unconfined \
-        -v "$WORK/data:/data" -v "$WORK/config:/config" -v "$WORK/media:/media" \
-        "$IMAGE" >/dev/null
+    # Capabilities and AppArmor come from config.yaml. Never use --privileged here.
+    local args
+    mapfile -t args < <(addon_run_args)
+    docker run -d --name "$NAME" "${args[@]}" "$IMAGE" >/dev/null
     for _ in $(seq 1 30); do
         if [ "$(docker inspect -f '{{.State.Running}}' "$NAME")" != true ]; then break; fi
         if bash -c 'exec 3<>/dev/tcp/127.0.0.1/2049' 2>/dev/null; then return 0; fi
@@ -92,4 +114,24 @@ unmount_export() {
     while grep -q " ${MNT:-/nonexistent} " /proc/mounts; do
         umount -f "$MNT" 2>/dev/null || umount -l "$MNT" || return 1
     done
+}
+
+# ganesha.nfsd's kernel process flags (/proc/<pid>/stat field 9), decimal.
+ganesha_flags() {
+    docker exec "$NAME" sh -c 'for p in /proc/[0-9]*; do
+        if [ "$(cat "$p/comm" 2>/dev/null)" = ganesha.nfsd ]; then cut -d" " -f9 "$p/stat"; fi
+    done'
+}
+
+# PR_SET_IO_FLUSHER sets PF_MEMALLOC_NOIO (bit 19) and PF_LOCAL_THROTTLE (bit 20).
+assert_io_flusher() {
+    local f on
+    f=$(ganesha_flags)
+    [ -n "$f" ] || fail "ganesha.nfsd is not running"
+    on=$(( (f >> 19 & 1) && (f >> 20 & 1) ))
+    if [ "$1" = on ]; then
+        (( on )) || fail "IO-flusher flags not set (flags=$(printf '0x%08x' "$f"))"
+    else
+        (( ! on )) || fail "IO-flusher flags unexpectedly set (flags=$(printf '0x%08x' "$f"))"
+    fi
 }

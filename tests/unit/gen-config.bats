@@ -4,6 +4,7 @@ bats_load_library bats-support
 bats_load_library bats-assert
 
 GEN="$BATS_TEST_DIRNAME/../../nfs-ganesha/gen-config.sh"
+CONFIG_YAML="$BATS_TEST_DIRNAME/../../nfs-ganesha/config.yaml"
 
 setup() {
     ROOT="$BATS_TEST_TMPDIR/root"
@@ -44,6 +45,21 @@ gen() { bash "$GEN" "$BATS_TEST_DIRNAME/fixtures/$1.json" "$ROOT"; }
     assert_output --partial 'Enable_NLM = false;'
     assert_output --partial 'Enable_RQUOTA = false;'
     refute_output --regexp 'Protocols = [^4]'
+}
+
+@test "Ganesha 6 io_flusher: failure is tolerated as a safety net" {
+    run --separate-stderr gen default
+    assert_output --partial 'Allow_Set_Io_Flusher_Fail = true;'
+}
+
+@test "config.yaml grants exactly the capabilities the add-on needs" {
+    run python3 -c 'import sys, yaml; print(" ".join(sorted(yaml.safe_load(open(sys.argv[1]))["privileged"])))' "$CONFIG_YAML"
+    assert_output "DAC_READ_SEARCH SYS_RESOURCE"
+}
+
+@test "config.yaml leaves AppArmor enabled" {
+    run python3 -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1])).get("apparmor", True))' "$CONFIG_YAML"
+    assert_output "True"
 }
 
 # Runs the generator on inline JSON options (for cases without a golden file).

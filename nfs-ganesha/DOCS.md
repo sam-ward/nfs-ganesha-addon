@@ -285,6 +285,15 @@ sudo mount -t nfs4 <HA_IP>:/ /mnt/homeassistant
 4. **Firewall** - Consider blocking port 2049 at your network edge
 5. **Home use only** - This configuration is designed for home networks
 
+### Privileges
+
+The app asks Home Assistant for two extra capabilities, and nothing more:
+
+- **`DAC_READ_SEARCH`** - the NFS server reopens files by their file handle, which needs this capability.
+- **`SYS_RESOURCE`** - lets the NFS server tell the kernel it is part of the storage path, which prevents stalls when memory is low.
+
+AppArmor is enabled, and the app's security rating is 3 (up from 2).
+
 ## Advanced Usage
 
 ### Read-Only Mounts (Client-side)

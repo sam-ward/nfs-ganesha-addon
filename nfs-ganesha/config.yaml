@@ -21,9 +21,8 @@ map:
   - media:rw
 host_network: true
 privileged:
-  - SYS_ADMIN
   - DAC_READ_SEARCH
-apparmor: false
+  - SYS_RESOURCE
 options:
   authorized_ips:
     - "10.0.0.0/8"

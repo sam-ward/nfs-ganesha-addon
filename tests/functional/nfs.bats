@@ -119,6 +119,57 @@ PY
     start_addon "$AUTHORISED"   # restore for any later tests
 }
 
+@test "DAC_READ_SEARCH is required (FSAL_VFS reopens files by handle)" {
+    # If a future Ganesha no longer needs it, this fails and the capability can go.
+    stop_addon
+    DROP_CAPS=DAC_READ_SEARCH start_addon "$AUTHORISED"
+    mount_export /config
+    run cat "$MNT/hello.txt"
+    assert_failure
+    assert_output --partial "Operation not permitted"
+    unmount_export
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+@test "IO-flusher protection is active with config.yaml's capabilities" {
+    skip "Ganesha 4.3 never calls PR_SET_IO_FLUSHER; enabled by the trixie upgrade"
+    assert_io_flusher on
+    run docker logs "$NAME"
+    refute_output --partial "PR_SET_IO_FLUSHER"
+    refute_output --partial "Unknown parameter"
+}
+
+@test "without SYS_RESOURCE the add-on still starts and serves (safety net)" {
+    stop_addon
+    DROP_CAPS=SYS_RESOURCE start_addon "$AUTHORISED"
+    mount_export /config
+    run cat "$MNT/hello.txt"; assert_output "hello from config"
+    unmount_export
+    assert_io_flusher off
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+@test "without SYS_RESOURCE and without the allow-fail line, Ganesha 6 refuses to start" {
+    skip "Ganesha 4.3 never calls PR_SET_IO_FLUSHER; enabled by the trixie upgrade"
+    # Proves the config line is what keeps the add-on alive, so it isn't removed as unused.
+    # Test-only override: runs Ganesha directly on a config with the line stripped.
+    stop_addon
+    local args
+    mapfile -t args < <(DROP_CAPS=SYS_RESOURCE addon_run_args)
+    docker run -d --name "$NAME" "${args[@]}" --entrypoint sh "$IMAGE" -c '
+        /gen-config.sh > /tmp/g.conf && sed -i "/Allow_Set_Io_Flusher_Fail/d" /tmp/g.conf
+        mkdir -p /var/run/dbus && dbus-daemon --system --fork
+        exec /usr/bin/ganesha.nfsd -F -L /dev/stdout -f /tmp/g.conf' >/dev/null
+    run docker wait "$NAME"
+    assert_output 2
+    run docker logs "$NAME"
+    assert_output --partial "PR_SET_IO_FLUSHER"
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
 @test "add-on refuses to start with no export folders (never exports /)" {
     stop_addon
     run start_addon '{"authorized_ips":["127.0.0.1"],"export_folders":[]}'
@@ -164,9 +215,9 @@ PY
     python3 -m http.server 2049 --bind 0.0.0.0 >/dev/null 2>&1 &
     local holder=$!
     WORK="$REPO_ROOT/.test-work"
-    docker run -d --name "$NAME" --network host --cap-add SYS_ADMIN --cap-add DAC_READ_SEARCH \
-        --security-opt apparmor=unconfined -v "$WORK/data:/data" -v "$WORK/config:/config" \
-        -v "$WORK/media:/media" "$IMAGE" >/dev/null
+    local args
+    mapfile -t args < <(addon_run_args)
+    docker run -d --name "$NAME" "${args[@]}" "$IMAGE" >/dev/null
     sleep 10
     run docker logs "$NAME"
     kill "$holder"
