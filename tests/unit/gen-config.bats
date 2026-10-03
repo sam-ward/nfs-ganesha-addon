@@ -299,3 +299,16 @@ exports() { awk -F'"' '/^    Path = /{p=$2} /^    Pseudo = /{print p " -> " $2}'
     assert_success
     assert_output ""
 }
+
+# --- AppArmor profile (nfs-ganesha/apparmor.txt) ---
+
+@test "apparmor.txt has exactly one top-level profile, as the Supervisor requires" {
+    # The Supervisor's get_profile_name(): lines matching ^profile ([^ ]+)
+    run grep -cE '^profile [^ ]+' "$BATS_TEST_DIRNAME/../../nfs-ganesha/apparmor.txt"
+    assert_output 1
+}
+
+@test "apparmor.txt parses" {
+    run apparmor_parser --skip-kernel-load --quiet "$BATS_TEST_DIRNAME/../../nfs-ganesha/apparmor.txt"
+    assert_success
+}

@@ -354,7 +354,7 @@ The app asks Home Assistant for two extra capabilities, and nothing more:
 - **`DAC_READ_SEARCH`** - the NFS server reopens files by their file handle, which needs this capability.
 - **`SYS_RESOURCE`** - lets the NFS server tell the kernel it is part of the storage path, which prevents stalls when memory is low.
 
-AppArmor is enabled, and the app's security rating is 3 (up from 2).
+The app runs under its own AppArmor profile, which limits what the NFS server and the startup scripts can do (capabilities, network access and programs they can run). Its security rating is 4 (up from 2).
 
 ## Advanced Usage
 

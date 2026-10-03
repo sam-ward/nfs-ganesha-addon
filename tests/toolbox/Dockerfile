@@ -7,7 +7,9 @@ FROM debian:trixie-slim
 
 # nfs-common: mount.nfs4 for the functional tests (run in a privileged container).
 # python3 comes with yamllint and is used to hold port 2049 in one test.
+# apparmor: apparmor_parser loads the add-on's custom profile for the tests.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        apparmor \
         bats \
         bats-assert \
         bats-support \

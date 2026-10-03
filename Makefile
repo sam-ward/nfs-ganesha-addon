@@ -11,9 +11,10 @@ else
 RUN = docker run --rm -v "$(CURDIR):$(CURDIR)" -w "$(CURDIR)" \
 	--user "$$(id -u):$$(id -g)" $(TOOLBOX)
 # Functional tests mount NFS and drive the host's Docker, so they run as root,
-# privileged, on the host network.
+# privileged, on the host network. They see host PIDs so they can inspect the
+# add-on's processes from outside (docker exec would run under its AppArmor profile).
 RUN_PRIV = docker run --rm -v "$(CURDIR):$(CURDIR)" -w "$(CURDIR)" \
-	--privileged --network host -v /var/run/docker.sock:/var/run/docker.sock \
+	--privileged --network host --pid host -v /var/run/docker.sock:/var/run/docker.sock \
 	$(TOOLBOX)
 endif
 
@@ -42,3 +43,5 @@ test: lint unit functional
 clean: toolbox
 	-docker rm -f nfs-ganesha-functional > /dev/null 2>&1
 	$(RUN_PRIV) rm -rf .test-work .test-logs
+	-$(RUN_PRIV) sh -c '[ -d /sys/kernel/security/apparmor ] || mount -t securityfs securityfs /sys/kernel/security; \
+		printf nfs_ganesha_test > /sys/kernel/security/apparmor/.remove' 2>/dev/null

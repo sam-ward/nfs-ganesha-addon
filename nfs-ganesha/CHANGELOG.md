@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - Rebuilt on Debian trixie with nfs-ganesha 9.14 from trixie-backports (was 4.3 on bookworm). Thanks to @morgaroth for the upgrade in PR #4.
  - Fixes "Remote I/O error" when NFS 4.1/4.2 clients check the share right after writing to it.
  - nfs-ganesha 9.14 is rebuilt with an upstream fix (commit 6c076b4ea9) for a bug that set a file's group to `root` (0), or failed with "Invalid argument", when a client changed a file's group or owner (for example `chown` or `rsync -a`).
- - Fewer privileges: the app no longer needs SYS_ADMIN, and AppArmor is now enabled. The security rating improves from 2 to 3.
+ - Fewer privileges: the app no longer needs SYS_ADMIN, and it now runs under its own AppArmor profile (previously AppArmor was disabled). The security rating improves from 2 to 4.
  - The app now requests the SYS_RESOURCE capability so Ganesha can register as an IO flusher, which avoids stalls under memory pressure. If the capability is unavailable it still starts. SYS_RESOURCE doesn't affect the rating.
  - Dropped armhf, armv7 and i386 (no longer supported by Home Assistant since 2025.12).
  - New optional `log_level` setting (default `WARN`) for troubleshooting. Debug levels also print the generated ganesha.conf.

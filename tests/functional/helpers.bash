@@ -32,8 +32,27 @@ addon_caps() {
         "$REPO_ROOT/nfs-ganesha/config.yaml"
 }
 
+# The add-on's custom AppArmor profile. The Supervisor loads it under the
+# add-on's slug; the tests load it under this name.
+AA_FILE="$REPO_ROOT/nfs-ganesha/apparmor.txt"
+AA_PROFILE=nfs_ganesha_test
+
+# Loads AA_FILE (if present) into the host kernel as AA_PROFILE, renaming the
+# profile as the Supervisor does. AA_COMPLAIN=1 loads it in complain mode,
+# which logs what it would deny instead of denying it.
+load_apparmor_profile() {
+    [ -f "$AA_FILE" ] || return 0
+    [ -d /sys/kernel/security/apparmor ] || mount -t securityfs securityfs /sys/kernel/security
+    sed -E "s/^profile [^ ]+/profile $AA_PROFILE/" "$AA_FILE" > "$BATS_FILE_TMPDIR/apparmor.txt"
+    # Compile for this kernel's features, as HAOS does. Debian's parser.conf pins
+    # an older feature set, which mismatches newer kernels (e.g. unix sockets).
+    apparmor_parser --replace ${AA_COMPLAIN:+--complain} \
+        --policy-features /sys/kernel/security/apparmor/features \
+        "$BATS_FILE_TMPDIR/apparmor.txt"
+}
+
 # AppArmor as config.yaml sets it: unconfined only if it says `apparmor: false`;
-# otherwise Docker's default profile, the nearest local stand-in for the Supervisor's.
+# otherwise the custom profile if there is one, else Docker's default profile.
 addon_apparmor_enabled() {
     python3 -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1])).get("apparmor", True))' \
         "$REPO_ROOT/nfs-ganesha/config.yaml"
@@ -43,7 +62,11 @@ addon_apparmor_enabled() {
 addon_run_args() {
     local cap
     printf '%s\n' --network host
-    [ "$(addon_apparmor_enabled)" = True ] || printf '%s\n' --security-opt apparmor=unconfined
+    if [ "$(addon_apparmor_enabled)" != True ]; then
+        printf '%s\n' --security-opt apparmor=unconfined
+    elif [ -f "$AA_FILE" ]; then
+        printf '%s\n' --security-opt "apparmor=$AA_PROFILE"
+    fi
     for cap in $(addon_caps); do
         [[ " ${DROP_CAPS:-} " == *" $cap "* ]] || printf '%s\n' --cap-add "$cap"
     done
@@ -131,11 +154,25 @@ unmount_export() {
     done
 }
 
+# The add-on's processes are inspected from the host's /proc (the toolbox runs
+# with --pid host): a docker exec would run under the add-on's AppArmor profile.
+
+# Host PID of the add-on's ganesha.nfsd (found by the container id in its cgroup).
+ganesha_pid() {
+    local id p
+    id=$(docker inspect -f '{{.Id}}' "$NAME")
+    for p in /proc/[0-9]*; do
+        [ "$(cat "$p/comm" 2>/dev/null)" = ganesha.nfsd ] && grep -q "$id" "$p/cgroup" 2>/dev/null \
+            && { echo "${p#/proc/}"; return 0; }
+    done
+    return 0
+}
+
 # ganesha.nfsd's kernel process flags (/proc/<pid>/stat field 9), decimal.
 ganesha_flags() {
-    docker exec "$NAME" sh -c 'for p in /proc/[0-9]*; do
-        if [ "$(cat "$p/comm" 2>/dev/null)" = ganesha.nfsd ]; then cut -d" " -f9 "$p/stat"; fi
-    done'
+    local pid
+    pid=$(ganesha_pid)
+    [ -z "$pid" ] || cut -d" " -f9 "/proc/$pid/stat"
 }
 
 # PR_SET_IO_FLUSHER sets PF_MEMALLOC_NOIO (bit 19) and PF_LOCAL_THROTTLE (bit 20).

@@ -8,6 +8,12 @@ AUTHORISED='{"authorized_ips":["127.0.0.1"],"export_folders":["config","media"]}
 setup_file() {
     reset_log
     build_image
+    load_apparmor_profile
+    # Mark the kernel log, so the last test sees only this run's AppArmor events.
+    # (A line count doesn't work: a full ring buffer wraps.)
+    KMSG_MARK="nfs-ganesha-functional-tests start $(date +%s%N)"
+    echo "$KMSG_MARK" > /dev/kmsg
+    export KMSG_MARK
     start_addon "$AUTHORISED"
 }
 
@@ -174,9 +180,10 @@ PY
     local args
     mapfile -t args < <(DROP_CAPS=SYS_RESOURCE addon_run_args)
     docker run -d --name "$NAME" "${args[@]}" --entrypoint sh "$IMAGE" -c '
-        /gen-config.sh > /tmp/g.conf && sed -i "/Allow_Set_Io_Flusher_Fail/d" /tmp/g.conf
+        mkdir -p /etc/ganesha && /gen-config.sh > /etc/ganesha/g.conf
+        sed -i "/Allow_Set_Io_Flusher_Fail/d" /etc/ganesha/g.conf
         mkdir -p /var/run/dbus && dbus-daemon --system --fork
-        exec /usr/bin/ganesha.nfsd -F -L /dev/stdout -f /tmp/g.conf' >/dev/null
+        exec /usr/bin/ganesha.nfsd -F -L STDOUT -f /etc/ganesha/g.conf' >/dev/null
     run docker wait "$NAME"
     assert_output 2
     run docker logs "$NAME"
@@ -307,7 +314,8 @@ PY
 
 # The harness has no Supervisor, so "auto" resolves from the routing table.
 host_primary_ip() {
-    docker exec "$NAME" ip -j -4 route get 1.1.1.1 | jq --raw-output '.[0].prefsrc'
+    # The source address the host would use to reach the internet (no packets sent).
+    python3 -c 'import socket; s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.connect(("1.1.1.1", 53)); print(s.getsockname()[0])'
 }
 
 @test "auto: resolves the host's LAN subnet; LAN clients mount, others are refused" {
@@ -379,8 +387,8 @@ host_primary_ip() {
 }
 
 @test "folders: /config is still served, from HA's /homeassistant mount" {
-    run docker exec "$NAME" cat /homeassistant/hello.txt
-    assert_output "hello from config"
+    run docker inspect -f '{{range .Mounts}}{{if eq .Destination "/homeassistant"}}{{.Source}}{{end}}{{end}}' "$NAME"
+    assert_output "$WORK/config"
     mount_export /config
     run cat "$MNT/hello.txt"; assert_output "hello from config"
 }
@@ -448,4 +456,25 @@ PY
     assert_output --partial "Could not migrate export_folders"
     stop_addon
     start_addon "$AUTHORISED"
+}
+
+# Kept last: checks the kernel log for anything the profile blocked (or, in
+# complain mode, would have blocked) during this run. Best effort: without an
+# audit daemon the kernel rate-limits audit messages (about 10 per 5 s) and
+# drops the rest, so a denial can go unlogged. The behavioural tests above are
+# what catch a missing rule.
+@test "AppArmor: the add-on runs under its custom profile, with nothing denied" {
+    [ -f "$AA_FILE" ] || skip "no custom AppArmor profile"
+    run docker inspect -f '{{.AppArmorProfile}}' "$NAME"
+    assert_output "$AA_PROFILE"
+    run cat "/proc/$(docker inspect -f '{{.State.Pid}}' "$NAME")/attr/current"
+    assert_output "$AA_PROFILE (enforce)"
+    run cat "/proc/$(ganesha_pid)/attr/current"
+    assert_output "$AA_PROFILE//ganesha (enforce)"
+    local events
+    dmesg | grep -qF "$KMSG_MARK" || fail "kernel log marker missing (log wrapped?)"
+    events=$(dmesg | sed -n "\|$KMSG_MARK|,\$p" \
+        | grep "profile=\"$AA_PROFILE" | grep -E 'apparmor="(DENIED|ALLOWED)"' \
+        | grep -v 'class="posix_mqueue"' || true)  # see the mqueue note in apparmor.txt
+    [ -z "$events" ] || fail "AppArmor events for $AA_PROFILE:"$'\n'"$events"
 }
