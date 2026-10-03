@@ -341,6 +341,43 @@ host_primary_ip() {
     start_addon "$AUTHORISED"
 }
 
+@test "files owned by other users can be written, chmod-ed and chown-ed" {
+    # HA's folders hold files from other apps and users (e.g. uid 1000). All
+    # clients are squashed to root, so root's file permissions must work.
+    mkdir -p "$WORK/config/others"
+    echo "theirs" > "$WORK/config/others/existing.txt"
+    chown -R 1000:1000 "$WORK/config/others"
+    chmod 755 "$WORK/config/others"; chmod 644 "$WORK/config/others/existing.txt"
+    mount_export /config
+    echo "new" > "$MNT/others/new.txt"
+    echo "more" >> "$MNT/others/existing.txt"
+    chmod 600 "$MNT/others/existing.txt"
+    chown 1001:1001 "$MNT/others/existing.txt"
+    run stat -c '%u:%g %a' "$WORK/config/others/existing.txt"
+    assert_output "1001:1001 600"
+    run cat "$WORK/config/others/existing.txt"
+    assert_output $'theirs\nmore'
+    rm -rf "$MNT/others"
+}
+
+@test "numeric owner and group changes are applied exactly (Ganesha 9.14 over-read fix)" {
+    # Linux clients send owners and groups as bare numbers. Unpatched 9.14 read
+    # one byte past them, so group changes became 0 or failed with EINVAL.
+    mkdir -p "$WORK/config/ids"
+    for f in a b c d e; do echo x > "$WORK/config/ids/$f"; done
+    chown -R 1000:1000 "$WORK/config/ids"
+    mount_export /config
+    chgrp 1002 "$MNT/ids/a"
+    chown 1001:1001 "$MNT/ids/b"
+    chown 1001 "$MNT/ids/c"; chgrp 1002 "$MNT/ids/c"
+    chown :1002 "$MNT/ids/d"
+    chown 1005:1006 "$MNT/ids/e"
+    run stat -c '%n=%u:%g' "$WORK"/config/ids/{a,b,c,d,e}
+    assert_output "$(printf '%s\n' "$WORK/config/ids/a=1000:1002" "$WORK/config/ids/b=1001:1001" \
+        "$WORK/config/ids/c=1001:1002" "$WORK/config/ids/d=1000:1002" "$WORK/config/ids/e=1005:1006")"
+    rm -rf "$MNT/ids"
+}
+
 @test "folders: /config is still served, from HA's /homeassistant mount" {
     run docker exec "$NAME" cat /homeassistant/hello.txt
     assert_output "hello from config"
