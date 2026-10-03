@@ -38,7 +38,6 @@ for_version() {
 @test "NFSv4.2 read/write/rename/delete" { for_version 4.2; }
 
 @test "no Remote I/O error on the mount root right after writes (NFSv4.1/4.2)" {
-    skip "Ganesha 4.3 and 6.5 return EREMOTEIO here; fixed by 9.x from trixie-backports"
     local v i fails
     for v in 4.1 4.2; do
         fails=0
@@ -54,9 +53,9 @@ for_version() {
 }
 
 @test "NFSv4.2 COPY (server-side copy) is handled by the server" {
-    # Ganesha 4.3 (bookworm) returns an error for COPY and the Linux client then
-    # copies the data itself, so only the op counters reveal it.
-    skip "Ganesha 4.3 rejects COPY; re-check on 6.x in the PR #4 work"
+    # Ganesha returns an error for COPY and the Linux client then copies the
+    # data itself, so only the op counters reveal it.
+    skip "server-side COPY rejected by all tested versions; see backlog investigation"
     mount_export /config "vers=4.2"
     check_version_negotiated 4.2
     local copy
@@ -149,7 +148,6 @@ PY
 }
 
 @test "IO-flusher protection is active with config.yaml's capabilities" {
-    skip "Ganesha 4.3 never calls PR_SET_IO_FLUSHER; enabled by the trixie upgrade"
     assert_io_flusher on
     run docker logs "$NAME"
     refute_output --partial "PR_SET_IO_FLUSHER"
@@ -163,12 +161,13 @@ PY
     run cat "$MNT/hello.txt"; assert_output "hello from config"
     unmount_export
     assert_io_flusher off
+    run docker logs "$NAME"
+    assert_output --partial "Failed to set PR_SET_IO_FLUSHER due to EPERM"
     stop_addon
     start_addon "$AUTHORISED"
 }
 
 @test "without SYS_RESOURCE and without the allow-fail line, Ganesha 6 refuses to start" {
-    skip "Ganesha 4.3 never calls PR_SET_IO_FLUSHER; enabled by the trixie upgrade"
     # Proves the config line is what keeps the add-on alive, so it isn't removed as unused.
     # Test-only override: runs Ganesha directly on a config with the line stripped.
     stop_addon

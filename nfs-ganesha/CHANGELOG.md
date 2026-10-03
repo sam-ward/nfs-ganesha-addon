@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [Unreleased]
+ - Rebuilt on Debian trixie with nfs-ganesha 9.14 from trixie-backports (was 4.3 on bookworm). Thanks to @morgaroth for the upgrade in PR #4.
+ - Fixes "Remote I/O error" when NFS 4.1/4.2 clients check the share right after writing to it.
+ - Fewer privileges: the app no longer needs SYS_ADMIN, and AppArmor is now enabled. The security rating improves from 2 to 3.
+ - The app now requests the SYS_RESOURCE capability so Ganesha can register as an IO flusher, which avoids stalls under memory pressure. If the capability is unavailable it still starts. SYS_RESOURCE doesn't affect the rating.
+ - Dropped armhf, armv7 and i386 (no longer supported by Home Assistant since 2025.12).
+ - Documentation: support links now point to the Home Assistant Community thread (GitHub Discussions isn't enabled), plus small fixes (PR #8).
+
 ## [1.2.1] - 2026-09-30
  - Security fix - An empty `export_folders` list exported the container's root directory (`/`) read-write to authorized clients. The app now refuses to start and logs why when there are no folders to share, and empty folder names are ignored.
  - Security fix - Export folder names are now checked against the supported list (config, ssl, addons, addon_configs, backup, share, media); anything else is skipped with a warning.

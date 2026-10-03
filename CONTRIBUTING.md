@@ -20,7 +20,7 @@ Use the GitHub issue tracker and provide:
 - Expected vs actual behavior
 - Home Assistant version
 - App version
-- Architecture (amd64/armv7/etc)
+- Architecture (amd64 or aarch64)
 - Relevant logs from the app
 
 ## Suggesting Features

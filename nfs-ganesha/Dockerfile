@@ -1,15 +1,17 @@
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
-# Install Ganesha, utils, and dependencies
-# We also install dbus and rpcbind which are often required by Ganesha
-# Recommends kept until functional tests show they're not needed.
-# hadolint ignore=DL3015
-RUN apt-get update && apt-get install -y \
-    nfs-ganesha \
-    nfs-ganesha-vfs \
-    dbus \
-    bash \
-    jq \
+# Install Ganesha, utils, and dependencies.
+# Ganesha comes from trixie-backports (9.x); trixie's own 6.5 returns
+# "Remote I/O error" on the mount root after writes. Everything else is trixie.
+RUN echo 'deb http://deb.debian.org/debian trixie-backports main' > /etc/apt/sources.list.d/backports.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends -t trixie-backports \
+        nfs-ganesha \
+        nfs-ganesha-vfs \
+    && apt-get install -y --no-install-recommends \
+        dbus \
+        bash \
+        jq \
     && rm -rf /var/lib/apt/lists/*
 
 # Create required directories
