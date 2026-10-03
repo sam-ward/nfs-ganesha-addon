@@ -4,11 +4,13 @@ bats_load_library bats-support
 bats_load_library bats-assert
 
 GEN="$BATS_TEST_DIRNAME/../../nfs-ganesha/gen-config.sh"
+MIGRATE="$BATS_TEST_DIRNAME/../../nfs-ganesha/migrate-options.sh"
 CONFIG_YAML="$BATS_TEST_DIRNAME/../../nfs-ganesha/config.yaml"
 
 setup() {
     ROOT="$BATS_TEST_TMPDIR/root"
-    mkdir -p "$ROOT"/{config,ssl,addons,addon_configs,backup,share,media}
+    # The folders as the Supervisor mounts them (config.yaml map).
+    mkdir -p "$ROOT"/{homeassistant,ssl,local_apps,app_configs,backup,share,media}
 }
 
 gen() { bash "$GEN" "$BATS_TEST_DIRNAME/fixtures/$1.json" "$ROOT"; }
@@ -25,12 +27,13 @@ gen() { bash "$GEN" "$BATS_TEST_DIRNAME/fixtures/$1.json" "$ROOT"; }
 
 @test "security: every EXPORT denies by default and grants RW only inside CLIENT" {
     run --separate-stderr gen default
+    # 7 folders plus the /addons and /addon_configs legacy aliases.
     # Top-level (4-space indent) Access_Type in each EXPORT must be None.
-    assert_equal "$(grep -c '^EXPORT$' <<< "$output")" 7
-    assert_equal "$(grep -c '^    Access_Type = None;$' <<< "$output")" 7
+    assert_equal "$(grep -c '^EXPORT$' <<< "$output")" 9
+    assert_equal "$(grep -c '^    Access_Type = None;$' <<< "$output")" 9
     # RW only appears at CLIENT depth (8 spaces), once per export.
-    assert_equal "$(grep -c 'Access_Type = RW;' <<< "$output")" 7
-    assert_equal "$(grep -c '^        Access_Type = RW;$' <<< "$output")" 7
+    assert_equal "$(grep -c 'Access_Type = RW;' <<< "$output")" 9
+    assert_equal "$(grep -c '^        Access_Type = RW;$' <<< "$output")" 9
 }
 
 @test "security: CLIENT list is exactly authorized_ips" {
@@ -93,7 +96,7 @@ gen_json() {
     run --separate-stderr gen_json '{"authorized_ips":["192.168.1.0/24"],"export_folders":["config","media"]}'
     assert_success
     assert_equal "$(grep -c '^EXPORT$' <<< "$output")" 1
-    assert_output --partial 'Path = "/config";'
+    assert_output --partial 'Pseudo = "/config";'
     [[ "$stderr" == *"/media does not exist"* ]]
 }
 
@@ -109,7 +112,8 @@ gen_json() {
     assert_success
     refute_output --partial 'Path = "/";'
     assert_equal "$(grep -c '^EXPORT$' <<< "$output")" 1
-    assert_output --partial 'Path = "/config";'
+    assert_output --partial 'Path = "/homeassistant";'
+    refute_output --partial 'Pseudo = "/";'
 }
 
 @test "security: folder names outside the allowed list are rejected" {
@@ -148,7 +152,7 @@ gen_json() {
 
 @test "export ids are unique and sequential from 10" {
     run --separate-stderr gen default
-    assert_equal "$(grep -o 'Export_Id = [0-9]*' <<< "$output" | awk '{print $3}' | tr '\n' ' ')" "10 11 12 13 14 15 16 "
+    assert_equal "$(grep -o 'Export_Id = [0-9]*' <<< "$output" | awk '{print $3}' | tr '\n' ' ')" "10 11 12 13 14 15 16 17 18 "
 }
 
 
@@ -229,4 +233,69 @@ AUTO='{"authorized_ips":["auto"],"export_folders":["config"]}'
 @test "config.yaml defaults for new installs: auto, and share/media/backup only" {
     run python3 -c 'import sys, json, yaml; o = yaml.safe_load(open(sys.argv[1]))["options"]; print(json.dumps([o["authorized_ips"], o["export_folders"]]))' "$CONFIG_YAML"
     assert_output '[["auto"], ["share", "media", "backup"]]'
+}
+
+# --- Folder mappings (as the Samba add-on: new map names, legacy aliases) ---
+
+# Prints "Path -> Pseudo" for each EXPORT, in order.
+exports() { awk -F'"' '/^    Path = /{p=$2} /^    Pseudo = /{print p " -> " $2}' <<< "$output"; }
+
+@test "folders: config is served from /homeassistant but still mounted as /config" {
+    run --separate-stderr gen_json '{"authorized_ips":["192.168.1.0/24"],"export_folders":["config"]}'
+    assert_success
+    assert_equal "$(exports)" "/homeassistant -> /config"
+}
+
+@test "folders: local_apps and app_configs also answer on their legacy paths" {
+    run --separate-stderr gen_json '{"authorized_ips":["192.168.1.0/24"],"export_folders":["local_apps","app_configs"]}'
+    assert_equal "$(exports)" "$(printf '%s\n' \
+        '/local_apps -> /local_apps' '/app_configs -> /app_configs' \
+        '/local_apps -> /addons' '/app_configs -> /addon_configs')"
+    [[ "$stderr" == *'/addons is a legacy path for /local_apps'* ]]
+}
+
+@test "folders: legacy option names give the same exports as the new ones" {
+    run --separate-stderr gen_json '{"authorized_ips":["192.168.1.0/24"],"export_folders":["addons","addon_configs"]}'
+    assert_equal "$(exports)" "$(printf '%s\n' \
+        '/local_apps -> /local_apps' '/app_configs -> /app_configs' \
+        '/local_apps -> /addons' '/app_configs -> /addon_configs')"
+}
+
+@test "folders: a folder listed under both names is exported once" {
+    run --separate-stderr gen_json '{"authorized_ips":["192.168.1.0/24"],"export_folders":["addons","local_apps"]}'
+    assert_equal "$(exports)" "$(printf '%s\n' '/local_apps -> /local_apps' '/local_apps -> /addons')"
+}
+
+@test "folders: aliases come after the primary exports, so primary export ids don't move" {
+    run --separate-stderr gen_json '{"authorized_ips":["192.168.1.0/24"],"export_folders":["local_apps","share"]}'
+    assert_output --regexp 'Export_Id = 10;[^}]*Pseudo = "/local_apps"'
+    assert_output --regexp 'Export_Id = 11;[^}]*Pseudo = "/share"'
+    assert_output --regexp 'Export_Id = 12;[^}]*Pseudo = "/addons"'
+}
+
+@test "config.yaml maps folders with the current Supervisor names" {
+    run python3 -c 'import sys, yaml; print(" ".join(sorted(yaml.safe_load(open(sys.argv[1]))["map"])))' "$CONFIG_YAML"
+    assert_output "all_app_configs:rw backup:rw homeassistant_config:rw local_apps:rw media:rw share:rw ssl:rw"
+}
+
+# --- Migrating saved options (migrate-options.sh) ---
+
+@test "migrate: legacy folder names are renamed, everything else kept" {
+    run bash "$MIGRATE" <<< '{"authorized_ips":["10.0.0.0/8"],"export_folders":["addons","config","addon_configs"],"log_level":"WARN"}'
+    assert_success
+    assert_output '{"options":{"authorized_ips":["10.0.0.0/8"],"export_folders":["local_apps","config","app_configs"],"log_level":"WARN"}}'
+}
+
+@test "migrate: a folder listed under both names ends up once" {
+    run bash "$MIGRATE" <<< '{"authorized_ips":["auto"],"export_folders":["addons","local_apps","share"]}'
+    assert_output '{"options":{"authorized_ips":["auto"],"export_folders":["local_apps","share"]}}'
+}
+
+@test "migrate: nothing to do prints nothing" {
+    run bash "$MIGRATE" <<< '{"authorized_ips":["auto"],"export_folders":["share","media"]}'
+    assert_success
+    assert_output ""
+    run bash "$MIGRATE" <<< '{"authorized_ips":["auto"]}'
+    assert_success
+    assert_output ""
 }

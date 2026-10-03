@@ -127,31 +127,24 @@ LOG {
 }
 EOF
 
-# Add Exports based on user selection
-ID=10
+# Add Exports based on user selection.
+# Each option name maps to the folder config.yaml mounts (Path) and the path
+# clients mount (Pseudo). As in the Samba add-on, "addons"/"addon_configs" are
+# the legacy names of "local_apps"/"app_configs" and stay mountable as aliases.
+declare -A FOLDER_PATH=(
+    [config]=/homeassistant [ssl]=/ssl [local_apps]=/local_apps
+    [app_configs]=/app_configs [backup]=/backup [share]=/share [media]=/media
+)
+declare -A LEGACY_PSEUDO=([local_apps]=/addons [app_configs]=/addon_configs)
 
-while IFS= read -r FOLDER; do
-    # Only the folders config.yaml maps. An empty name would export "/" itself.
-    case "$FOLDER" in
-        config|ssl|addons|addon_configs|backup|share|media) ;;
-        "") continue ;;
-        *)
-            echo "[WARN] Unknown export folder '$FOLDER', skipping..." >&2
-            continue
-            ;;
-    esac
-    DIR="/$FOLDER"
-
-    if [ -d "${ROOT%/}$DIR" ]; then
-        echo "[NFS] Exporting: $DIR" >&2
-
-        cat <<EOF
+export_block() {  # <id> <path> <pseudo>
+    cat <<EOF
 
 EXPORT
 {
-    Export_Id = $ID;
-    Path = "$DIR";
-    Pseudo = "$DIR";
+    Export_Id = $1;
+    Path = "$2";
+    Pseudo = "$3";
     FSAL { Name = VFS; }
     Access_Type = None;
     CLIENT
@@ -162,11 +155,47 @@ EXPORT
     }
 }
 EOF
+}
+
+ID=10
+EXPORTED=" "
+ALIASES=()
+
+while IFS= read -r FOLDER; do
+    case "$FOLDER" in
+        addons) FOLDER=local_apps ;;
+        addon_configs) FOLDER=app_configs ;;
+    esac
+    # Only the folders config.yaml maps. An empty name would export "/" itself.
+    case "$FOLDER" in
+        config|ssl|local_apps|app_configs|backup|share|media) ;;
+        "") continue ;;
+        *)
+            echo "[WARN] Unknown export folder '$FOLDER', skipping..." >&2
+            continue
+            ;;
+    esac
+    [[ "$EXPORTED" == *" $FOLDER "* ]] && continue
+    DIR=${FOLDER_PATH[$FOLDER]}
+
+    if [ -d "${ROOT%/}$DIR" ]; then
+        echo "[NFS] Exporting: /$FOLDER" >&2
+        export_block "$ID" "$DIR" "/$FOLDER"
         ID=$((ID+1))
+        EXPORTED+="$FOLDER "
+        [ -z "${LEGACY_PSEUDO[$FOLDER]:-}" ] || ALIASES+=("$FOLDER")
     else
         echo "[WARN] Directory $DIR does not exist, skipping..." >&2
     fi
 done <<< "$EXPORT_FOLDERS"
+
+# Legacy aliases go last, so the primary exports keep their ids (clients'
+# file handles include the export id).
+for FOLDER in "${ALIASES[@]}"; do
+    echo "[NFS] Also exporting: ${LEGACY_PSEUDO[$FOLDER]} (${LEGACY_PSEUDO[$FOLDER]} is a legacy path for /$FOLDER; switch clients to /$FOLDER)" >&2
+    export_block "$ID" "${FOLDER_PATH[$FOLDER]}" "${LEGACY_PSEUDO[$FOLDER]}"
+    ID=$((ID+1))
+done
 
 if [ "$ID" -eq 10 ]; then
     echo "[ERROR] No export folders to share; select at least one in export_folders. Refusing to start." >&2

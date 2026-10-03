@@ -13,11 +13,11 @@
 >
 > - New installs share only `share`, `media` and `backup`, and only with clients on Home Assistant's own network (`auto`).
 > - **Existing installs keep their current settings when updating.** Nothing is changed for them. To adopt the new defaults, change the options yourself.
-> - To also share `config`, `ssl`, `addons` or `addon_configs`, add them to `export_folders`. Each one exposes sensitive files:
+> - To also share `config`, `ssl`, `local_apps` or `app_configs`, add them to `export_folders`. Each one exposes sensitive files:
 >   - `config`: your Home Assistant configuration, including `secrets.yaml`
 >   - `ssl`: certificates and their private keys
->   - `addons`: the source of locally installed apps
->   - `addon_configs`: other apps' configuration, which can include their secrets
+>   - `local_apps`: the source of locally installed apps
+>   - `app_configs`: other apps' configuration, which can include their secrets
 > - `auto` means Home Assistant's own network subnet, worked out at each start. The app's log shows what it resolved to, for example `authorized_ips "auto" -> 192.168.1.0/24 (primary interface end0, from Supervisor)`. You can combine it with other entries, or replace it with explicit subnets.
 
 ### Example Configuration
@@ -87,8 +87,10 @@ Select which Home Assistant folders to export via NFS.
 **Available folders:**
 - `config` - Home Assistant configuration files, including `secrets.yaml`
 - `ssl` - SSL certificates and their private keys
-- `addons` - Local apps
-- `addon_configs` - App configuration files, which can include other apps' secrets
+- `local_apps` - Local apps
+- `app_configs` - App configuration files, which can include other apps' secrets
+
+`local_apps` and `app_configs` were called `addons` and `addon_configs` before Home Assistant renamed add-ons to apps. The app still accepts the old names and renames them in your saved settings automatically. Clients can still mount the old paths (`/addons`, `/addon_configs`), but they are deprecated: switch your mounts to `/local_apps` and `/app_configs`.
 - `backup` - Backup files
 - `share` - Shared files
 - `media` - Media files
@@ -106,8 +108,8 @@ export_folders:
 export_folders:
   - config
   - ssl
-  - addons
-  - addon_configs
+  - local_apps
+  - app_configs
   - backup
   - share
   - media

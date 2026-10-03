@@ -8,11 +8,14 @@ arch:
   - aarch64
   - amd64
 init: false
+# Current Supervisor map names, as the Samba add-on uses them. They mount at
+# /homeassistant, /local_apps and /app_configs; gen-config.sh exports them
+# to clients as /config, /local_apps and /app_configs.
 map:
-  - config:rw
+  - homeassistant_config:rw
   - ssl:rw
-  - addons:rw
-  - all_addon_configs:rw
+  - local_apps:rw
+  - all_app_configs:rw
   - backup:rw
   - share:rw
   - media:rw
@@ -34,5 +37,5 @@ schema:
   authorized_ips:
     - str
   export_folders:
-    - match(config|ssl|addons|addon_configs|backup|share|media)
+    - match(config|ssl|local_apps|app_configs|addons|addon_configs|backup|share|media)
   log_level: list(NULL|FATAL|MAJ|CRIT|WARN|EVENT|INFO|DEBUG|MID_DEBUG|FULL_DEBUG)?

@@ -39,11 +39,11 @@ Expose Home Assistant folders via NFS using nfs-ganesha in userspace.
 >
 > - New installs share only `share`, `media` and `backup`, and only with clients on Home Assistant's own network (`auto`).
 > - **Existing installs keep their current settings when updating.** Nothing is changed for them. To adopt the new defaults, change the options yourself.
-> - To also share `config`, `ssl`, `addons` or `addon_configs`, add them to `export_folders`. Each one exposes sensitive files:
+> - To also share `config`, `ssl`, `local_apps` or `app_configs`, add them to `export_folders`. Each one exposes sensitive files:
 >   - `config`: your Home Assistant configuration, including `secrets.yaml`
 >   - `ssl`: certificates and their private keys
->   - `addons`: the source of locally installed apps
->   - `addon_configs`: other apps' configuration, which can include their secrets
+>   - `local_apps`: the source of locally installed apps
+>   - `app_configs`: other apps' configuration, which can include their secrets
 > - `auto` means Home Assistant's own network subnet, worked out at each start. The app's log shows what it resolved to, for example `authorized_ips "auto" -> 192.168.1.0/24 (primary interface end0, from Supervisor)`. You can combine it with other entries, or replace it with explicit subnets.
 
 ```yaml
@@ -101,13 +101,15 @@ List of Home Assistant folders to export via NFS. Select one or more from:
 
 - `config` - Home Assistant configuration
 - `ssl` - SSL certificates
-- `addons` - Local apps
-- `addon_configs` - App configuration files
+- `local_apps` - Local apps
+- `app_configs` - App configuration files
 - `backup` - Backups
 - `share` - Shared files
 - `media` - Media files
 
-**Default (new installs):** `share`, `media` and `backup`. `config`, `ssl`, `addons` and `addon_configs` contain secrets or private keys, so add them only if you need them.
+`local_apps` and `app_configs` were called `addons` and `addon_configs` before Home Assistant renamed add-ons to apps. The app still accepts the old names and renames them in your saved settings automatically. Clients can still mount the old paths (`/addons`, `/addon_configs`), but they are deprecated: switch your mounts to `/local_apps` and `/app_configs`.
+
+**Default (new installs):** `share`, `media` and `backup`. `config`, `ssl`, `local_apps` and `app_configs` contain secrets or private keys, so add them only if you need them.
 ```yaml
 export_folders:
   - share

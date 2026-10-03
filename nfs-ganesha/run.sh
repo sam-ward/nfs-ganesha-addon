@@ -2,13 +2,35 @@
 set -e
 
 CONFIG_PATH=/data/options.json
+SUPERVISOR_API=${SUPERVISOR_API:-http://supervisor}
 
 echo "[NFS] Starting NFS-Ganesha (Debian Mode)..."
 # Always logged, so a pasted log shows exactly what is running.
 echo "[NFS] App version: ${ADDON_VERSION:-unknown}"
 echo "[NFS] Ganesha version: $(/usr/bin/ganesha.nfsd -v 2>&1 | head -1)"
 
-# 1. Network info for authorized_ips "auto": the Supervisor's view of HA's
+# 1. Rename saved legacy folder names (addons, addon_configs) to the current
+# ones, as the Samba add-on does. This run already handles both names, so a
+# failure only means trying again next start.
+if [ -n "${SUPERVISOR_TOKEN:-}" ]; then
+    if STORED=$(curl -fsS --max-time 5 -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+            "${SUPERVISOR_API}/addons/self/info" | jq --compact-output '.data.options // empty') \
+        && [ -n "$STORED" ] && PAYLOAD=$(/migrate-options.sh <<< "$STORED"); then
+        if [ -n "$PAYLOAD" ]; then
+            if curl -fsS --max-time 5 -X POST -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" \
+                    -H "Content-Type: application/json" -d "$PAYLOAD" \
+                    "${SUPERVISOR_API}/addons/self/options" > /dev/null; then
+                echo "[NFS] Migrated export_folders to the new folder names (addons -> local_apps, addon_configs -> app_configs)"
+            else
+                echo "[WARN] Could not migrate export_folders to the new folder names; will retry on next start"
+            fi
+        fi
+    else
+        echo "[WARN] Could not migrate export_folders (Supervisor API unavailable); will retry on next start"
+    fi
+fi
+
+# 2. Network info for authorized_ips "auto": the Supervisor's view of HA's
 # network, or else the host routing table (we run on the host network).
 NETWORK_INFO=/tmp/network-info.json
 : > "$NETWORK_INFO"
@@ -16,7 +38,7 @@ if jq --exit-status '.authorized_ips | index("auto")' "$CONFIG_PATH" > /dev/null
     if [ -n "${NETWORK_INFO_OVERRIDE:-}" ]; then
         cp "$NETWORK_INFO_OVERRIDE" "$NETWORK_INFO"   # tests only
     elif [ -n "${SUPERVISOR_TOKEN:-}" ] && RESPONSE=$(curl -fsS --max-time 5 \
-            -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/network/info); then
+            -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" "${SUPERVISOR_API}/network/info"); then
         jq '.data + {source: "Supervisor"}' <<< "$RESPONSE" > "$NETWORK_INFO" || : > "$NETWORK_INFO"
     else
         DEV=$(ip -j route show default 2>/dev/null | jq --raw-output '.[0].dev // empty')
@@ -30,12 +52,12 @@ if jq --exit-status '.authorized_ips | index("auto")' "$CONFIG_PATH" > /dev/null
     fi
 fi
 
-# 2. Build Ganesha Configuration (logs IPs, folders and exports to stderr)
+# 3. Build Ganesha Configuration (logs IPs, folders and exports to stderr)
 CONF="/etc/ganesha/ganesha.conf"
 mkdir -p /etc/ganesha
 /gen-config.sh "$CONFIG_PATH" / "$NETWORK_INFO" > "$CONF"
 
-# 3. Start DBUS
+# 4. Start DBUS
 echo "[NFS] Starting D-Bus..."
 mkdir -p /var/run/dbus
 if [ -e /var/run/dbus/pid ]; then rm /var/run/dbus/pid; fi

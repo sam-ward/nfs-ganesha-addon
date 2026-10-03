@@ -47,9 +47,15 @@ addon_run_args() {
     for cap in $(addon_caps); do
         [[ " ${DROP_CAPS:-} " == *" $cap "* ]] || printf '%s\n' --cap-add "$cap"
     done
-    printf '%s\n' -v "$WORK/data:/data" -v "$WORK/config:/config" -v "$WORK/media:/media"
-    # Test-only: replaces the network info "auto" resolves from.
-    [ -z "${NETWORK_INFO_OVERRIDE:-}" ] || printf '%s\n' -e "NETWORK_INFO_OVERRIDE=$NETWORK_INFO_OVERRIDE"
+    # Mounted where the Supervisor mounts config.yaml's map entries.
+    printf '%s\n' -v "$WORK/data:/data" -v "$WORK/config:/homeassistant" -v "$WORK/media:/media" \
+        -v "$WORK/local_apps:/local_apps"
+    # Test-only: NETWORK_INFO_OVERRIDE replaces the network info "auto" resolves
+    # from; SUPERVISOR_API/SUPERVISOR_TOKEN point the add-on at a mock Supervisor.
+    local var
+    for var in NETWORK_INFO_OVERRIDE SUPERVISOR_API SUPERVISOR_TOKEN; do
+        [ -z "${!var:-}" ] || printf '%s\n' -e "$var=${!var}"
+    done
 }
 
 start_addon() {
@@ -58,7 +64,7 @@ start_addon() {
     # Exported: bats only passes exported variables from setup_file to tests.
     export WORK="$REPO_ROOT/.test-work"
     export MNT="$BATS_FILE_TMPDIR/mnt"
-    mkdir -p "$WORK"/{data,config,media} "$MNT"
+    mkdir -p "$WORK"/{data,config,media,local_apps} "$MNT"
     echo "$1" > "$WORK/data/options.json"
     echo "hello from config" > "$WORK/config/hello.txt"
     docker rm -f "$NAME" >/dev/null 2>&1 || true

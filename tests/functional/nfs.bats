@@ -340,3 +340,75 @@ host_primary_ip() {
     stop_addon
     start_addon "$AUTHORISED"
 }
+
+@test "folders: /config is still served, from HA's /homeassistant mount" {
+    run docker exec "$NAME" cat /homeassistant/hello.txt
+    assert_output "hello from config"
+    mount_export /config
+    run cat "$MNT/hello.txt"; assert_output "hello from config"
+}
+
+@test "folders: legacy /addons and /local_apps serve the same folder" {
+    stop_addon
+    start_addon '{"authorized_ips":["127.0.0.1"],"export_folders":["local_apps"]}'
+    echo "from local_apps" > "$WORK/local_apps/apps.txt"
+    mount_export /addons
+    run cat "$MNT/apps.txt"; assert_output "from local_apps"
+    unmount_export
+    mount_export /local_apps
+    run cat "$MNT/apps.txt"; assert_output "from local_apps"
+    unmount_export
+    run docker logs "$NAME"
+    assert_output --partial "/addons is a legacy path for /local_apps"
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+# A one-shot mock of the Supervisor's /addons/self API on 127.0.0.1:$1. It
+# answers GET /addons/self/info with $2 as the stored options and writes the
+# body of POST /addons/self/options to $BATS_TEST_TMPDIR/posted.json.
+mock_supervisor() {
+    python3 - "$1" "$2" "$BATS_TEST_TMPDIR/posted.json" <<'PY' &
+import http.server, json, sys
+port, options, out = int(sys.argv[1]), json.loads(sys.argv[2]), sys.argv[3]
+class H(http.server.BaseHTTPRequestHandler):
+    def reply(self, body):
+        data = json.dumps(body).encode()
+        self.send_response(200); self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
+    def do_GET(self):
+        self.reply({"result": "ok", "data": {"options": options}})
+    def do_POST(self):
+        with open(out, "wb") as f:
+            f.write(self.rfile.read(int(self.headers["Content-Length"])))
+        self.reply({"result": "ok", "data": {}})
+    def log_message(self, *a): pass
+http.server.HTTPServer(("127.0.0.1", port), H).serve_forever()
+PY
+    MOCK_PID=$!
+    until bash -c "exec 3<>/dev/tcp/127.0.0.1/$1" 2>/dev/null; do sleep 0.2; done
+}
+
+@test "migrate: saved legacy folder names are rewritten via the Supervisor API" {
+    local stored='{"authorized_ips":["127.0.0.1"],"export_folders":["addons","config"],"log_level":"WARN"}'
+    mock_supervisor 18080 "$stored"
+    stop_addon
+    SUPERVISOR_API=http://127.0.0.1:18080 SUPERVISOR_TOKEN=test start_addon "$stored"
+    kill "$MOCK_PID"; wait "$MOCK_PID" 2>/dev/null || true
+    run cat "$BATS_TEST_TMPDIR/posted.json"
+    assert_output '{"options":{"authorized_ips":["127.0.0.1"],"export_folders":["local_apps","config"],"log_level":"WARN"}}'
+    run docker logs "$NAME"
+    assert_output --partial "Migrated export_folders to the new folder names"
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+@test "migrate: an unreachable Supervisor only logs a warning" {
+    stop_addon
+    SUPERVISOR_API=http://127.0.0.1:18081 SUPERVISOR_TOKEN=test \
+        start_addon '{"authorized_ips":["127.0.0.1"],"export_folders":["addons"]}'
+    run docker logs "$NAME"
+    assert_output --partial "Could not migrate export_folders"
+    stop_addon
+    start_addon "$AUTHORISED"
+}
