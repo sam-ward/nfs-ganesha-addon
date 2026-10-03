@@ -8,6 +8,12 @@ AUTHORISED='{"authorized_ips":["127.0.0.1"],"export_folders":["config","media"]}
 setup_file() {
     reset_log
     build_image
+    load_apparmor_profile
+    # Mark the kernel log, so the last test sees only this run's AppArmor events.
+    # (A line count doesn't work: a full ring buffer wraps.)
+    KMSG_MARK="nfs-ganesha-functional-tests start $(date +%s%N)"
+    echo "$KMSG_MARK" > /dev/kmsg
+    export KMSG_MARK
     start_addon "$AUTHORISED"
 }
 
@@ -37,10 +43,25 @@ for_version() {
 @test "NFSv4.1 read/write/rename/delete" { for_version 4.1; }
 @test "NFSv4.2 read/write/rename/delete" { for_version 4.2; }
 
+@test "no Remote I/O error on the mount root right after writes (NFSv4.1/4.2)" {
+    local v i fails
+    for v in 4.1 4.2; do
+        fails=0
+        for i in 1 2 3 4 5; do
+            mount_export /config "vers=$v"
+            head -c 20M /dev/urandom > "$MNT/rio-$i.bin"
+            mountpoint -q "$MNT" || fails=$((fails + 1))
+            rm -f "$MNT/rio-$i.bin"
+            unmount_export
+        done
+        (( fails == 0 )) || fail "vers=$v: Remote I/O error in $fails/5 attempts"
+    done
+}
+
 @test "NFSv4.2 COPY (server-side copy) is handled by the server" {
-    # Ganesha 4.3 (bookworm) returns an error for COPY and the Linux client then
-    # copies the data itself, so only the op counters reveal it.
-    skip "Ganesha 4.3 rejects COPY; re-check on 6.x in the PR #4 work"
+    # Ganesha returns an error for COPY and the Linux client then copies the
+    # data itself, so only the op counters reveal it.
+    skip "server-side COPY rejected by all tested versions; see backlog investigation"
     mount_export /config "vers=4.2"
     check_version_negotiated 4.2
     local copy
@@ -119,6 +140,58 @@ PY
     start_addon "$AUTHORISED"   # restore for any later tests
 }
 
+@test "DAC_READ_SEARCH is required (FSAL_VFS reopens files by handle)" {
+    # If a future Ganesha no longer needs it, this fails and the capability can go.
+    stop_addon
+    DROP_CAPS=DAC_READ_SEARCH start_addon "$AUTHORISED"
+    mount_export /config
+    run cat "$MNT/hello.txt"
+    assert_failure
+    assert_output --partial "Operation not permitted"
+    unmount_export
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+@test "IO-flusher protection is active with config.yaml's capabilities" {
+    assert_io_flusher on
+    run docker logs "$NAME"
+    refute_output --partial "PR_SET_IO_FLUSHER"
+    refute_output --partial "Unknown parameter"
+}
+
+@test "without SYS_RESOURCE the add-on still starts and serves (safety net)" {
+    stop_addon
+    DROP_CAPS=SYS_RESOURCE start_addon "$AUTHORISED"
+    mount_export /config
+    run cat "$MNT/hello.txt"; assert_output "hello from config"
+    unmount_export
+    assert_io_flusher off
+    run docker logs "$NAME"
+    assert_output --partial "Failed to set PR_SET_IO_FLUSHER due to EPERM"
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+@test "without SYS_RESOURCE and without the allow-fail line, Ganesha 6 refuses to start" {
+    # Proves the config line is what keeps the add-on alive, so it isn't removed as unused.
+    # Test-only override: runs Ganesha directly on a config with the line stripped.
+    stop_addon
+    local args
+    mapfile -t args < <(DROP_CAPS=SYS_RESOURCE addon_run_args)
+    docker run -d --name "$NAME" "${args[@]}" --entrypoint sh "$IMAGE" -c '
+        mkdir -p /etc/ganesha && /gen-config.sh > /etc/ganesha/g.conf
+        sed -i "/Allow_Set_Io_Flusher_Fail/d" /etc/ganesha/g.conf
+        mkdir -p /var/run/dbus && dbus-daemon --system --fork
+        exec /usr/bin/ganesha.nfsd -F -L STDOUT -f /etc/ganesha/g.conf' >/dev/null
+    run docker wait "$NAME"
+    assert_output 2
+    run docker logs "$NAME"
+    assert_output --partial "PR_SET_IO_FLUSHER"
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
 @test "add-on refuses to start with no export folders (never exports /)" {
     stop_addon
     run start_addon '{"authorized_ips":["127.0.0.1"],"export_folders":[]}'
@@ -157,20 +230,251 @@ PY
 }
 
 @test "startup failure is visible in the log when port 2049 is taken" {
-    # 1.2.0 tails Ganesha's log file and kills the tail as soon as Ganesha exits,
-    # so the reason never reaches the add-on log ("Ganesha exited" only).
-    skip "enabled by log/exit-code change in PR #4 work"
+    # The reason must reach the add-on log, and the add-on must exit non-zero
+    # so the Supervisor shows it as an error.
     stop_addon
     python3 -m http.server 2049 --bind 0.0.0.0 >/dev/null 2>&1 &
     local holder=$!
     WORK="$REPO_ROOT/.test-work"
-    docker run -d --name "$NAME" --network host --cap-add SYS_ADMIN --cap-add DAC_READ_SEARCH \
-        --security-opt apparmor=unconfined -v "$WORK/data:/data" -v "$WORK/config:/config" \
-        -v "$WORK/media:/media" "$IMAGE" >/dev/null
-    sleep 10
+    local args
+    mapfile -t args < <(addon_run_args)
+    docker run -d --name "$NAME" "${args[@]}" "$IMAGE" >/dev/null
+    run timeout 30 docker wait "$NAME"
+    kill "$holder"; wait "$holder" 2>/dev/null || true
+    assert_success
+    refute_output 0
     run docker logs "$NAME"
-    kill "$holder"
     assert_output --regexp '[Aa]ddress already in use|bind'
+    assert_output --partial "Ganesha exited with code"
     stop_addon
     start_addon "$AUTHORISED"
+}
+
+@test "startup log identifies the app and Ganesha versions, IPs and exports" {
+    run docker logs "$NAME"
+    assert_output --partial "[NFS] App version: $(addon_version)"
+    assert_output --regexp 'Ganesha version: NFS-Ganesha Release = V[0-9]'
+    assert_output --partial "[NFS] Authorized IPs: 127.0.0.1"
+    assert_output --partial "[NFS] Exporting: /config"
+    assert_output --partial "[NFS] Log level: WARN"
+    # The full config is only for debug levels.
+    refute_output --partial "Generated /etc/ganesha/ganesha.conf"
+}
+
+@test "log_level DEBUG also prints the generated ganesha.conf" {
+    stop_addon
+    start_addon '{"authorized_ips":["127.0.0.1"],"export_folders":["config","media"],"log_level":"DEBUG"}'
+    run docker logs "$NAME"
+    assert_output --partial "Generated /etc/ganesha/ganesha.conf"
+    assert_output --partial "Default_Log_Level = DEBUG;"
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+@test "every log_level value starts the daemon" {
+    for lvl in NULL FATAL MAJ CRIT WARN EVENT INFO DEBUG MID_DEBUG FULL_DEBUG; do
+        stop_addon
+        start_addon "{\"authorized_ips\":[\"127.0.0.1\"],\"export_folders\":[\"config\",\"media\"],\"log_level\":\"$lvl\"}" \
+            || fail "daemon did not start with log_level=$lvl"
+    done
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+@test "at WARN, Ganesha's log-level change chatter is filtered out" {
+    # Ganesha logs every log-level change at NIV_NULL (always shown), about
+    # 45 lines per start. They carry no information at the default level.
+    run docker logs "$NAME"
+    refute_output --partial " :LOG :NULL :LOG: "
+    assert_output --partial "[NFS] Launching Ganesha Daemon..."
+}
+
+@test "at EVENT and above, nothing is filtered" {
+    stop_addon
+    start_addon '{"authorized_ips":["127.0.0.1"],"export_folders":["config","media"],"log_level":"EVENT"}'
+    run docker logs "$NAME"
+    assert_output --partial " :LOG :NULL :LOG: "
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+@test "stopping the add-on shuts Ganesha down cleanly (no SIGKILL)" {
+    local start elapsed
+    start=$(date +%s)
+    docker stop -t 20 "$NAME" >/dev/null
+    elapsed=$(( $(date +%s) - start ))
+    run docker inspect -f '{{.State.ExitCode}}' "$NAME"
+    assert_output 0
+    (( elapsed < 15 )) || fail "stop took ${elapsed}s; Ganesha did not get the signal"
+    run docker logs "$NAME"
+    assert_output --partial "[NFS] Ganesha exited with code 0"
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+# The harness has no Supervisor, so "auto" resolves from the routing table.
+host_primary_ip() {
+    # The source address the host would use to reach the internet (no packets sent).
+    python3 -c 'import socket; s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.connect(("1.1.1.1", 53)); print(s.getsockname()[0])'
+}
+
+@test "auto: resolves the host's LAN subnet; LAN clients mount, others are refused" {
+    stop_addon
+    start_addon '{"authorized_ips":["auto"],"export_folders":["config"]}'
+    local ip
+    ip=$(host_primary_ip)
+    [ -n "$ip" ] && [ "$ip" != null ] || fail "could not find the host's primary IP"
+    run docker logs "$NAME"
+    assert_output --regexp 'authorized_ips "auto" -> [0-9.]+/[0-9]+ \(primary interface [^ ]+, from routing table\)'
+    # A client on the LAN (the host's own LAN address) is allowed.
+    mount -t nfs4 -o soft,timeo=50,retrans=2 "$ip:/config" "$MNT"
+    run cat "$MNT/hello.txt"; assert_output "hello from config"
+    unmount_export
+    # Loopback isn't on the LAN subnet, so it is refused.
+    run mount_export /config
+    assert_failure
+    assert_output --partial "reason given by server: No such file or directory"
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+@test "security: auto refuses to start when the network can't be determined" {
+    stop_addon
+    : > "$WORK/data/empty-network.json"
+    NETWORK_INFO_OVERRIDE=/data/empty-network.json run start_addon '{"authorized_ips":["auto"],"export_folders":["config"]}'
+    assert_failure
+    run docker logs "$NAME"
+    assert_output --partial 'authorized_ips "auto" could not be resolved'
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+@test "files owned by other users can be written, chmod-ed and chown-ed" {
+    # HA's folders hold files from other apps and users (e.g. uid 1000). All
+    # clients are squashed to root, so root's file permissions must work.
+    mkdir -p "$WORK/config/others"
+    echo "theirs" > "$WORK/config/others/existing.txt"
+    chown -R 1000:1000 "$WORK/config/others"
+    chmod 755 "$WORK/config/others"; chmod 644 "$WORK/config/others/existing.txt"
+    mount_export /config
+    echo "new" > "$MNT/others/new.txt"
+    echo "more" >> "$MNT/others/existing.txt"
+    chmod 600 "$MNT/others/existing.txt"
+    chown 1001:1001 "$MNT/others/existing.txt"
+    run stat -c '%u:%g %a' "$WORK/config/others/existing.txt"
+    assert_output "1001:1001 600"
+    run cat "$WORK/config/others/existing.txt"
+    assert_output $'theirs\nmore'
+    rm -rf "$MNT/others"
+}
+
+@test "numeric owner and group changes are applied exactly (Ganesha 9.14 over-read fix)" {
+    # Linux clients send owners and groups as bare numbers. Unpatched 9.14 read
+    # one byte past them, so group changes became 0 or failed with EINVAL.
+    mkdir -p "$WORK/config/ids"
+    for f in a b c d e; do echo x > "$WORK/config/ids/$f"; done
+    chown -R 1000:1000 "$WORK/config/ids"
+    mount_export /config
+    chgrp 1002 "$MNT/ids/a"
+    chown 1001:1001 "$MNT/ids/b"
+    chown 1001 "$MNT/ids/c"; chgrp 1002 "$MNT/ids/c"
+    chown :1002 "$MNT/ids/d"
+    chown 1005:1006 "$MNT/ids/e"
+    run stat -c '%n=%u:%g' "$WORK"/config/ids/{a,b,c,d,e}
+    assert_output "$(printf '%s\n' "$WORK/config/ids/a=1000:1002" "$WORK/config/ids/b=1001:1001" \
+        "$WORK/config/ids/c=1001:1002" "$WORK/config/ids/d=1000:1002" "$WORK/config/ids/e=1005:1006")"
+    rm -rf "$MNT/ids"
+}
+
+@test "folders: /config is still served, from HA's /homeassistant mount" {
+    run docker inspect -f '{{range .Mounts}}{{if eq .Destination "/homeassistant"}}{{.Source}}{{end}}{{end}}' "$NAME"
+    assert_output "$WORK/config"
+    mount_export /config
+    run cat "$MNT/hello.txt"; assert_output "hello from config"
+}
+
+@test "folders: legacy /addons and /local_apps serve the same folder" {
+    stop_addon
+    start_addon '{"authorized_ips":["127.0.0.1"],"export_folders":["local_apps"]}'
+    echo "from local_apps" > "$WORK/local_apps/apps.txt"
+    mount_export /addons
+    run cat "$MNT/apps.txt"; assert_output "from local_apps"
+    unmount_export
+    mount_export /local_apps
+    run cat "$MNT/apps.txt"; assert_output "from local_apps"
+    unmount_export
+    run docker logs "$NAME"
+    assert_output --partial "/addons is a legacy path for /local_apps"
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+# A one-shot mock of the Supervisor's /addons/self API on 127.0.0.1:$1. It
+# answers GET /addons/self/info with $2 as the stored options and writes the
+# body of POST /addons/self/options to $BATS_TEST_TMPDIR/posted.json.
+mock_supervisor() {
+    python3 - "$1" "$2" "$BATS_TEST_TMPDIR/posted.json" <<'PY' &
+import http.server, json, sys
+port, options, out = int(sys.argv[1]), json.loads(sys.argv[2]), sys.argv[3]
+class H(http.server.BaseHTTPRequestHandler):
+    def reply(self, body):
+        data = json.dumps(body).encode()
+        self.send_response(200); self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
+    def do_GET(self):
+        self.reply({"result": "ok", "data": {"options": options}})
+    def do_POST(self):
+        with open(out, "wb") as f:
+            f.write(self.rfile.read(int(self.headers["Content-Length"])))
+        self.reply({"result": "ok", "data": {}})
+    def log_message(self, *a): pass
+http.server.HTTPServer(("127.0.0.1", port), H).serve_forever()
+PY
+    MOCK_PID=$!
+    until bash -c "exec 3<>/dev/tcp/127.0.0.1/$1" 2>/dev/null; do sleep 0.2; done
+}
+
+@test "migrate: saved legacy folder names are rewritten via the Supervisor API" {
+    local stored='{"authorized_ips":["127.0.0.1"],"export_folders":["addons","config"],"log_level":"WARN"}'
+    mock_supervisor 18080 "$stored"
+    stop_addon
+    SUPERVISOR_API=http://127.0.0.1:18080 SUPERVISOR_TOKEN=test start_addon "$stored"
+    kill "$MOCK_PID"; wait "$MOCK_PID" 2>/dev/null || true
+    run cat "$BATS_TEST_TMPDIR/posted.json"
+    assert_output '{"options":{"authorized_ips":["127.0.0.1"],"export_folders":["local_apps","config"],"log_level":"WARN"}}'
+    run docker logs "$NAME"
+    assert_output --partial "Migrated export_folders to the new folder names"
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+@test "migrate: an unreachable Supervisor only logs a warning" {
+    stop_addon
+    SUPERVISOR_API=http://127.0.0.1:18081 SUPERVISOR_TOKEN=test \
+        start_addon '{"authorized_ips":["127.0.0.1"],"export_folders":["addons"]}'
+    run docker logs "$NAME"
+    assert_output --partial "Could not migrate export_folders"
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+# Kept last: checks the kernel log for anything the profile blocked (or, in
+# complain mode, would have blocked) during this run. Best effort: without an
+# audit daemon the kernel rate-limits audit messages (about 10 per 5 s) and
+# drops the rest, so a denial can go unlogged. The behavioural tests above are
+# what catch a missing rule.
+@test "AppArmor: the add-on runs under its custom profile, with nothing denied" {
+    [ -f "$AA_FILE" ] || skip "no custom AppArmor profile"
+    run docker inspect -f '{{.AppArmorProfile}}' "$NAME"
+    assert_output "$AA_PROFILE"
+    run cat "/proc/$(docker inspect -f '{{.State.Pid}}' "$NAME")/attr/current"
+    assert_output "$AA_PROFILE (enforce)"
+    run cat "/proc/$(ganesha_pid)/attr/current"
+    assert_output "$AA_PROFILE//ganesha (enforce)"
+    local events
+    dmesg | grep -qF "$KMSG_MARK" || fail "kernel log marker missing (log wrapped?)"
+    events=$(dmesg | sed -n "\|$KMSG_MARK|,\$p" \
+        | grep "profile=\"$AA_PROFILE" | grep -E 'apparmor="(DENIED|ALLOWED)"' \
+        | grep -v 'class="posix_mqueue"' || true)  # see the mqueue note in apparmor.txt
+    [ -z "$events" ] || fail "AppArmor events for $AA_PROFILE:"$'\n'"$events"
 }

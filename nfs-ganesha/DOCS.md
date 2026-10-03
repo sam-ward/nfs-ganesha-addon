@@ -9,6 +9,17 @@
 
 ## Configuration
 
+> **Defaults for new installs**
+>
+> - New installs share only `share`, `media` and `backup`, and only with clients on Home Assistant's own network (`auto`).
+> - **Existing installs keep their current settings when updating.** Nothing is changed for them. To adopt the new defaults, change the options yourself.
+> - To also share `config`, `ssl`, `local_apps` or `app_configs`, add them to `export_folders`. Each one exposes sensitive files:
+>   - `config`: your Home Assistant configuration, including `secrets.yaml`
+>   - `ssl`: certificates and their private keys
+>   - `local_apps`: the source of locally installed apps
+>   - `app_configs`: other apps' configuration, which can include their secrets
+> - `auto` means Home Assistant's own network subnet, worked out at each start. The app's log shows what it resolved to, for example `authorized_ips "auto" -> 192.168.1.0/24 (primary interface end0, from Supervisor)`. You can combine it with other entries, or replace it with explicit subnets.
+
 ### Example Configuration
 
 ```yaml
@@ -25,14 +36,25 @@ export_folders:
 
 **Required:** Yes  
 **Type:** List of strings  
-**Default:** All private network ranges
+**Default (new installs):** `auto`
 
-List of IP addresses or CIDR subnets allowed to access your NFS shares.
+List of IP addresses or CIDR subnets allowed to access your NFS shares, and/or `auto`.
+
+`auto` is replaced at each start by the subnet of Home Assistant's primary network interface (from Settings → System → Network), for example `192.168.1.0/24`. If the app can't work it out, it refuses to start and logs why, rather than guessing. Clients on other subnets, VPNs or VLANs need their own entries.
 
 **Examples:**
 
 ```yaml
-# Allow a specific subnet (recommended)
+# Home Assistant's own network (the default for new installs)
+authorized_ips:
+  - auto
+
+# Home Assistant's network plus a VPN subnet
+authorized_ips:
+  - auto
+  - "10.20.0.0/24"
+
+# Allow a specific subnet
 authorized_ips:
   - "192.168.1.0/24"
 
@@ -52,24 +74,23 @@ authorized_ips:
   - "*"
 ```
 
-**Private Network Ranges (default):**
-- `10.0.0.0/8` - Class A (10.0.0.0 - 10.255.255.255)
-- `172.16.0.0/12` - Class B (172.16.0.0 - 172.31.255.255)
-- `192.168.0.0/16` - Class C (192.168.0.0 - 192.168.255.255)
+Installs from before this change default to all private network ranges (`10.0.0.0/8`, `172.16.0.0/12` and `192.168.0.0/16`) and keep that setting until you change it.
 
 ### Option: `export_folders`
 
 **Required:** Yes  
 **Type:** Multi-select list  
-**Default:** All folders
+**Default (new installs):** `share`, `media`, `backup`
 
 Select which Home Assistant folders to export via NFS.
 
 **Available folders:**
-- `config` - Home Assistant configuration files
-- `ssl` - SSL certificates
-- `addons` - Local apps
-- `addon_configs` - App configuration files
+- `config` - Home Assistant configuration files, including `secrets.yaml`
+- `ssl` - SSL certificates and their private keys
+- `local_apps` - Local apps
+- `app_configs` - App configuration files, which can include other apps' secrets
+
+`local_apps` and `app_configs` were called `addons` and `addon_configs` before Home Assistant renamed add-ons to apps. The app still accepts the old names and renames them in your saved settings automatically. Clients can still mount the old paths (`/addons`, `/addon_configs`), but they are deprecated: switch your mounts to `/local_apps` and `/app_configs`.
 - `backup` - Backup files
 - `share` - Shared files
 - `media` - Media files
@@ -77,12 +98,18 @@ Select which Home Assistant folders to export via NFS.
 **Examples:**
 
 ```yaml
-# Export everything (default)
+# The default for new installs
+export_folders:
+  - share
+  - media
+  - backup
+
+# Export everything (includes secrets and private keys)
 export_folders:
   - config
   - ssl
-  - addons
-  - addon_configs
+  - local_apps
+  - app_configs
   - backup
   - share
   - media
@@ -95,6 +122,31 @@ export_folders:
 # Export only media
 export_folders:
   - media
+```
+
+### Option: `log_level`
+
+**Required:** No  
+**Type:** One of `NULL`, `FATAL`, `MAJ`, `CRIT`, `WARN`, `EVENT`, `INFO`, `DEBUG`, `MID_DEBUG`, `FULL_DEBUG`  
+**Default:** `WARN`
+
+How much the app and the NFS server log. Leave it at `WARN` unless you're troubleshooting, because the debug levels are very verbose.
+
+**What the app logs at each level:**
+
+| Level | What you see in the app's log |
+|---|---|
+| Every level | The app version, the NFS-Ganesha version, the log level, the authorized IPs and each exported folder. Include these lines when you ask for help. |
+| `NULL` to `WARN` | NFS-Ganesha's warnings and errors. A few noisy Ganesha components (`TIRPC`, `NFS_CB`, `INIT`, `DISPATCH`) only log fatal errors, as in earlier versions, and Ganesha's messages about log-level changes are hidden. |
+| `EVENT` and above | Nothing is muted or hidden: every Ganesha component logs at the chosen level. |
+| `DEBUG`, `MID_DEBUG`, `FULL_DEBUG` | Also prints the full generated `ganesha.conf` before the server starts. It contains your authorized IPs and folder names. |
+
+For what each level means inside NFS-Ganesha, see the [NFS-Ganesha logging documentation](https://github.com/nfs-ganesha/nfs-ganesha/blob/next/src/doc/man/ganesha-log-config.rst).
+
+**Example:**
+
+```yaml
+log_level: DEBUG
 ```
 
 ## Mounting from Clients
@@ -205,6 +257,7 @@ umount Z:
 3. **Check addon logs:**
    - Settings → Apps → NFS Server (Ganesha) → Logs
    - Look for errors or warnings
+   - For more detail, set `log_level` to `DEBUG`, restart the app and try again
 
 ### `showmount -e` doesn't work
 
@@ -233,6 +286,15 @@ telnet <HA_IP> 2049
 # Or with nc (netcat)
 nc -zv <HA_IP> 2049
 ```
+
+### "No such file or directory" when mounting
+
+**Cause:** Your client isn't in `authorized_ips`. NFS-Ganesha hides exports from clients it doesn't allow, so the mount fails as if the folder didn't exist.
+
+**Solution:**
+1. Check the app's log for the `authorized_ips "auto" ->` line to see which subnet `auto` resolved to
+2. If your client is on another subnet (a VPN or VLAN, for example), add that subnet to `authorized_ips`
+3. Restart the app
 
 ### Permission denied
 
@@ -284,6 +346,15 @@ sudo mount -t nfs4 <HA_IP>:/ /mnt/homeassistant
 3. **No encryption** - NFSv4 traffic is not encrypted (use VPN if needed)
 4. **Firewall** - Consider blocking port 2049 at your network edge
 5. **Home use only** - This configuration is designed for home networks
+
+### Privileges
+
+The app asks Home Assistant for two extra capabilities, and nothing more:
+
+- **`DAC_READ_SEARCH`** - the NFS server reopens files by their file handle, which needs this capability.
+- **`SYS_RESOURCE`** - lets the NFS server tell the kernel it is part of the storage path, which prevents stalls when memory is low.
+
+The app runs under its own AppArmor profile, which limits what the NFS server and the startup scripts can do (capabilities, network access and programs they can run). Its security rating is 4 (up from 2).
 
 ## Advanced Usage
 

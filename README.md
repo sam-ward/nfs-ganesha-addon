@@ -1,5 +1,7 @@
 # Home Assistant NFS Server (Ganesha) App
 
+<img src="img/logo.svg" alt="NFS Server (Ganesha) logo" width="128" align="right">
+
 [![GitHub Release][releases-shield]][releases]
 [![License][license-shield]](LICENSE)
 
@@ -35,31 +37,47 @@ Expose Home Assistant folders via NFS using nfs-ganesha in userspace.
 
 ### Basic Configuration
 
+> **Defaults for new installs**
+>
+> - New installs share only `share`, `media` and `backup`, and only with clients on Home Assistant's own network (`auto`).
+> - **Existing installs keep their current settings when updating.** Nothing is changed for them. To adopt the new defaults, change the options yourself.
+> - To also share `config`, `ssl`, `local_apps` or `app_configs`, add them to `export_folders`. Each one exposes sensitive files:
+>   - `config`: your Home Assistant configuration, including `secrets.yaml`
+>   - `ssl`: certificates and their private keys
+>   - `local_apps`: the source of locally installed apps
+>   - `app_configs`: other apps' configuration, which can include their secrets
+> - `auto` means Home Assistant's own network subnet, worked out at each start. The app's log shows what it resolved to, for example `authorized_ips "auto" -> 192.168.1.0/24 (primary interface end0, from Supervisor)`. You can combine it with other entries, or replace it with explicit subnets.
+
 ```yaml
 authorized_ips:
-  - "192.168.1.0/24"
+  - auto
 export_folders:
-  - config
-  - backup
+  - share
   - media
+  - backup
 ```
 
 ### Options
 
 #### `authorized_ips` (required)
 
-List of IP addresses or CIDR subnets allowed to access the NFS shares.
+List of IP addresses or CIDR subnets allowed to access the NFS shares, and/or `auto`.
 
-**Default:** All private network ranges
+`auto` is replaced at each start by the subnet of Home Assistant's primary network interface (from Settings → System → Network), for example `192.168.1.0/24`. If the app can't work it out, it refuses to start and logs why, rather than guessing. Clients on other subnets, VPNs or VLANs need their own entries.
+
+**Default (new installs):** `auto`
 ```yaml
 authorized_ips:
-  - "10.0.0.0/8"
-  - "172.16.0.0/12"
-  - "192.168.0.0/16"
+  - auto
 ```
 
 **Examples:**
 ```yaml
+# Home Assistant's network plus a VPN subnet
+authorized_ips:
+  - auto
+  - "10.20.0.0/24"
+
 # Single IP
 authorized_ips:
   - "192.168.1.100"
@@ -85,22 +103,35 @@ List of Home Assistant folders to export via NFS. Select one or more from:
 
 - `config` - Home Assistant configuration
 - `ssl` - SSL certificates
-- `addons` - Local apps
-- `addon_configs` - App configuration files
+- `local_apps` - Local apps
+- `app_configs` - App configuration files
 - `backup` - Backups
 - `share` - Shared files
 - `media` - Media files
 
-**Default:** All folders
+`local_apps` and `app_configs` were called `addons` and `addon_configs` before Home Assistant renamed add-ons to apps. The app still accepts the old names and renames them in your saved settings automatically. Clients can still mount the old paths (`/addons`, `/addon_configs`), but they are deprecated: switch your mounts to `/local_apps` and `/app_configs`.
+
+**Default (new installs):** `share`, `media` and `backup`. `config`, `ssl`, `local_apps` and `app_configs` contain secrets or private keys, so add them only if you need them.
 ```yaml
 export_folders:
-  - config
-  - ssl
-  - addons
-  - addon_configs
-  - backup
   - share
   - media
+  - backup
+```
+
+#### `log_level` (optional)
+
+How much the app and the NFS server log. One of `NULL`, `FATAL`, `MAJ`, `CRIT`, `WARN`, `EVENT`, `INFO`, `DEBUG`, `MID_DEBUG` or `FULL_DEBUG`.
+
+- At every level, the log starts with the app version, the NFS-Ganesha version, the authorized IPs and the exported folders.
+- `EVENT` and above stop muting Ganesha's noisier components.
+- `DEBUG`, `MID_DEBUG` and `FULL_DEBUG` also print the full generated `ganesha.conf`.
+
+See the app's Documentation tab for details, and the [NFS-Ganesha logging documentation](https://github.com/nfs-ganesha/nfs-ganesha/blob/next/src/doc/man/ganesha-log-config.rst) for what each level means inside Ganesha.
+
+**Default:** `WARN`
+```yaml
+log_level: WARN
 ```
 
 ## Mounting from Clients

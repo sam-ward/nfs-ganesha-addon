@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Fails if config.yaml's version differs from the newest CHANGELOG entry.
+# Fails if config.yaml's version differs from the newest released CHANGELOG
+# entry. An [Unreleased] section above it is allowed and skipped.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 cfg=$(sed -n 's/^version: *"\{0,1\}\([^"]*\)"\{0,1\} *$/\1/p' nfs-ganesha/config.yaml)
-log=$(sed -n 's/^## \[\([^]]*\)\].*/\1/p' nfs-ganesha/CHANGELOG.md | head -1)
+log=$(sed -n 's/^## \[\([^]]*\)\].*/\1/p' nfs-ganesha/CHANGELOG.md | grep -vx Unreleased | head -1)
 if [ "$cfg" != "$log" ]; then
     echo "version mismatch: config.yaml=$cfg CHANGELOG.md=$log" >&2
     exit 1

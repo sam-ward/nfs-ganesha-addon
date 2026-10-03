@@ -1,0 +1,1 @@
+{"source":"Supervisor","interfaces":[{"name":"end0","type":"ethernet","primary":true,"state":{"connected":true,"ipv4":{"addresses":["192.168.1.100/24"],"gateway":"192.168.1.1"}}}]}
