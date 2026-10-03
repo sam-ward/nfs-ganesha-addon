@@ -35,31 +35,47 @@ Expose Home Assistant folders via NFS using nfs-ganesha in userspace.
 
 ### Basic Configuration
 
+> **Defaults for new installs**
+>
+> - New installs share only `share`, `media` and `backup`, and only with clients on Home Assistant's own network (`auto`).
+> - **Existing installs keep their current settings when updating.** Nothing is changed for them. To adopt the new defaults, change the options yourself.
+> - To also share `config`, `ssl`, `addons` or `addon_configs`, add them to `export_folders`. Each one exposes sensitive files:
+>   - `config`: your Home Assistant configuration, including `secrets.yaml`
+>   - `ssl`: certificates and their private keys
+>   - `addons`: the source of locally installed apps
+>   - `addon_configs`: other apps' configuration, which can include their secrets
+> - `auto` means Home Assistant's own network subnet, worked out at each start. The app's log shows what it resolved to, for example `authorized_ips "auto" -> 192.168.1.0/24 (primary interface end0, from Supervisor)`. You can combine it with other entries, or replace it with explicit subnets.
+
 ```yaml
 authorized_ips:
-  - "192.168.1.0/24"
+  - auto
 export_folders:
-  - config
-  - backup
+  - share
   - media
+  - backup
 ```
 
 ### Options
 
 #### `authorized_ips` (required)
 
-List of IP addresses or CIDR subnets allowed to access the NFS shares.
+List of IP addresses or CIDR subnets allowed to access the NFS shares, and/or `auto`.
 
-**Default:** All private network ranges
+`auto` is replaced at each start by the subnet of Home Assistant's primary network interface (from Settings → System → Network), for example `192.168.1.0/24`. If the app can't work it out, it refuses to start and logs why, rather than guessing. Clients on other subnets, VPNs or VLANs need their own entries.
+
+**Default (new installs):** `auto`
 ```yaml
 authorized_ips:
-  - "10.0.0.0/8"
-  - "172.16.0.0/12"
-  - "192.168.0.0/16"
+  - auto
 ```
 
 **Examples:**
 ```yaml
+# Home Assistant's network plus a VPN subnet
+authorized_ips:
+  - auto
+  - "10.20.0.0/24"
+
 # Single IP
 authorized_ips:
   - "192.168.1.100"
@@ -91,16 +107,12 @@ List of Home Assistant folders to export via NFS. Select one or more from:
 - `share` - Shared files
 - `media` - Media files
 
-**Default:** All folders
+**Default (new installs):** `share`, `media` and `backup`. `config`, `ssl`, `addons` and `addon_configs` contain secrets or private keys, so add them only if you need them.
 ```yaml
 export_folders:
-  - config
-  - ssl
-  - addons
-  - addon_configs
-  - backup
   - share
   - media
+  - backup
 ```
 
 #### `log_level` (optional)

@@ -12,6 +12,8 @@ RUN echo 'deb http://deb.debian.org/debian trixie-backports main' > /etc/apt/sou
         dbus \
         bash \
         jq \
+        curl \
+        iproute2 \
     && rm -rf /var/lib/apt/lists/*
 
 # The Supervisor (and HA's image builder) pass the app version; run.sh logs it.

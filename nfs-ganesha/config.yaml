@@ -17,22 +17,18 @@ map:
   - share:rw
   - media:rw
 host_network: true
+# Read-only access to /network/info, to resolve authorized_ips "auto".
+hassio_api: true
 privileged:
   - DAC_READ_SEARCH
   - SYS_RESOURCE
 options:
   authorized_ips:
-    - "10.0.0.0/8"
-    - "172.16.0.0/12"
-    - "192.168.0.0/16"
+    - auto
   export_folders:
-    - config
-    - ssl
-    - addons
-    - addon_configs
-    - backup
     - share
     - media
+    - backup
   log_level: WARN
 schema:
   authorized_ips:

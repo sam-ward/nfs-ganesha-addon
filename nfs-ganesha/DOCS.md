@@ -9,6 +9,17 @@
 
 ## Configuration
 
+> **Defaults for new installs**
+>
+> - New installs share only `share`, `media` and `backup`, and only with clients on Home Assistant's own network (`auto`).
+> - **Existing installs keep their current settings when updating.** Nothing is changed for them. To adopt the new defaults, change the options yourself.
+> - To also share `config`, `ssl`, `addons` or `addon_configs`, add them to `export_folders`. Each one exposes sensitive files:
+>   - `config`: your Home Assistant configuration, including `secrets.yaml`
+>   - `ssl`: certificates and their private keys
+>   - `addons`: the source of locally installed apps
+>   - `addon_configs`: other apps' configuration, which can include their secrets
+> - `auto` means Home Assistant's own network subnet, worked out at each start. The app's log shows what it resolved to, for example `authorized_ips "auto" -> 192.168.1.0/24 (primary interface end0, from Supervisor)`. You can combine it with other entries, or replace it with explicit subnets.
+
 ### Example Configuration
 
 ```yaml
@@ -25,14 +36,25 @@ export_folders:
 
 **Required:** Yes  
 **Type:** List of strings  
-**Default:** All private network ranges
+**Default (new installs):** `auto`
 
-List of IP addresses or CIDR subnets allowed to access your NFS shares.
+List of IP addresses or CIDR subnets allowed to access your NFS shares, and/or `auto`.
+
+`auto` is replaced at each start by the subnet of Home Assistant's primary network interface (from Settings → System → Network), for example `192.168.1.0/24`. If the app can't work it out, it refuses to start and logs why, rather than guessing. Clients on other subnets, VPNs or VLANs need their own entries.
 
 **Examples:**
 
 ```yaml
-# Allow a specific subnet (recommended)
+# Home Assistant's own network (the default for new installs)
+authorized_ips:
+  - auto
+
+# Home Assistant's network plus a VPN subnet
+authorized_ips:
+  - auto
+  - "10.20.0.0/24"
+
+# Allow a specific subnet
 authorized_ips:
   - "192.168.1.0/24"
 
@@ -52,24 +74,21 @@ authorized_ips:
   - "*"
 ```
 
-**Private Network Ranges (default):**
-- `10.0.0.0/8` - Class A (10.0.0.0 - 10.255.255.255)
-- `172.16.0.0/12` - Class B (172.16.0.0 - 172.31.255.255)
-- `192.168.0.0/16` - Class C (192.168.0.0 - 192.168.255.255)
+Installs from before this change default to all private network ranges (`10.0.0.0/8`, `172.16.0.0/12` and `192.168.0.0/16`) and keep that setting until you change it.
 
 ### Option: `export_folders`
 
 **Required:** Yes  
 **Type:** Multi-select list  
-**Default:** All folders
+**Default (new installs):** `share`, `media`, `backup`
 
 Select which Home Assistant folders to export via NFS.
 
 **Available folders:**
-- `config` - Home Assistant configuration files
-- `ssl` - SSL certificates
+- `config` - Home Assistant configuration files, including `secrets.yaml`
+- `ssl` - SSL certificates and their private keys
 - `addons` - Local apps
-- `addon_configs` - App configuration files
+- `addon_configs` - App configuration files, which can include other apps' secrets
 - `backup` - Backup files
 - `share` - Shared files
 - `media` - Media files
@@ -77,7 +96,13 @@ Select which Home Assistant folders to export via NFS.
 **Examples:**
 
 ```yaml
-# Export everything (default)
+# The default for new installs
+export_folders:
+  - share
+  - media
+  - backup
+
+# Export everything (includes secrets and private keys)
 export_folders:
   - config
   - ssl
@@ -259,6 +284,15 @@ telnet <HA_IP> 2049
 # Or with nc (netcat)
 nc -zv <HA_IP> 2049
 ```
+
+### "No such file or directory" when mounting
+
+**Cause:** Your client isn't in `authorized_ips`. NFS-Ganesha hides exports from clients it doesn't allow, so the mount fails as if the folder didn't exist.
+
+**Solution:**
+1. Check the app's log for the `authorized_ips "auto" ->` line to see which subnet `auto` resolved to
+2. If your client is on another subnet (a VPN or VLAN, for example), add that subnet to `authorized_ips`
+3. Restart the app
 
 ### Permission denied
 

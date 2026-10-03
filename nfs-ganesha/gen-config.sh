@@ -1,15 +1,61 @@
 #!/bin/bash
 # Writes ganesha.conf for the add-on options to stdout. Log lines go to stderr.
-# Usage: gen-config.sh [options.json] [root]   (root prefixes the folder existence check; tests only)
+# Usage: gen-config.sh [options.json] [root] [network-info.json]
+#   root prefixes the folder existence check (tests only).
+#   network-info.json resolves "auto" in authorized_ips: the Supervisor's
+#   /network/info data (or run.sh's routing-table fallback in the same shape),
+#   plus a "source" field naming where it came from.
 set -e
 
 CONFIG_PATH=${1:-/data/options.json}
 ROOT=${2:-/}
+NETWORK_INFO=${3:-}
 
-# Read the authorized_ips array (blank entries dropped) and join with commas for Ganesha
-AUTHORIZED_IPS=$(jq --raw-output \
-    '[.authorized_ips[]? | strings | gsub("^\\s+|\\s+$"; "") | select(length > 0)] | join(",")' \
+# Prints the network (a.b.c.d/nn) of HA's primary interface, or fails.
+# Accepts the Supervisor v1 shape (interface, connected, ipv4.address[]) and
+# the v2 one (name, state.connected, state.ipv4.addresses[]).
+resolve_auto() {
+    local iface cidr ip prefix a b c d n mask
+    [ -n "$NETWORK_INFO" ] && [ -s "$NETWORK_INFO" ] || return 1
+    read -r iface cidr < <(jq --raw-output '
+        [.interfaces[]?
+         | select(.primary == true and ((.connected // .state.connected) == true))
+         | [(.interface // .name),
+            (((.ipv4.address // .state.ipv4.addresses // []) | map(select(test(":") | not)))[0] // empty)]
+         | select(length == 2)][0] // empty | join(" ")' "$NETWORK_INFO") || return 1
+    [ -n "$cidr" ] || return 1
+    ip=${cidr%/*}; prefix=${cidr#*/}
+    [[ "$ip" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || return 1
+    a=${BASH_REMATCH[1]}; b=${BASH_REMATCH[2]}; c=${BASH_REMATCH[3]}; d=${BASH_REMATCH[4]}
+    [[ "$prefix" =~ ^[0-9]+$ ]] && (( prefix >= 8 && prefix <= 32 )) || return 1
+    (( a <= 255 && b <= 255 && c <= 255 && d <= 255 )) || return 1
+    mask=$(( (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF ))
+    n=$(( ((a << 24) | (b << 16) | (c << 8) | d) & mask ))
+    AUTO_NET="$(( n >> 24 & 255 )).$(( n >> 16 & 255 )).$(( n >> 8 & 255 )).$(( n & 255 ))/${prefix}"
+    AUTO_IFACE=$iface
+    AUTO_SOURCE=$(jq --raw-output '.source // "network info"' "$NETWORK_INFO")
+}
+
+# Read the authorized_ips array, blank entries dropped
+mapfile -t IP_ENTRIES < <(jq --raw-output \
+    '.authorized_ips[]? | strings | gsub("^\\s+|\\s+$"; "") | select(length > 0)' \
     "$CONFIG_PATH")
+
+# Replace "auto" with HA's primary subnet. Never guess: refuse if it can't be resolved.
+CLIENTS=()
+for entry in "${IP_ENTRIES[@]}"; do
+    if [ "$entry" = auto ]; then
+        if ! resolve_auto; then
+            echo "[ERROR] authorized_ips \"auto\" could not be resolved (no connected primary network with an IPv4 address); set your subnet explicitly, e.g. 192.168.1.0/24. Refusing to start." >&2
+            exit 1
+        fi
+        echo "[NFS] authorized_ips \"auto\" -> ${AUTO_NET} (primary interface ${AUTO_IFACE}, from ${AUTO_SOURCE})" >&2
+        entry=$AUTO_NET
+    fi
+    [[ " ${CLIENTS[*]} " == *" $entry "* ]] || CLIENTS+=("$entry")
+done
+# Join with commas for Ganesha
+AUTHORIZED_IPS=$(IFS=,; echo "${CLIENTS[*]}")
 
 # Read the export_folders array
 EXPORT_FOLDERS=$(jq --raw-output '.export_folders[]? | strings' "$CONFIG_PATH")

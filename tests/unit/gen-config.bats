@@ -81,9 +81,11 @@ gen() { bash "$GEN" "$BATS_TEST_DIRNAME/fixtures/$1.json" "$ROOT"; }
 }
 
 # Runs the generator on inline JSON options (for cases without a golden file).
+# $2, if given, names a network-info fixture (tests/unit/fixtures/network/).
 gen_json() {
     printf '%s' "$1" > "$BATS_TEST_TMPDIR/options.json"
-    bash "$GEN" "$BATS_TEST_TMPDIR/options.json" "$ROOT"
+    bash "$GEN" "$BATS_TEST_TMPDIR/options.json" "$ROOT" \
+        ${2:+"$BATS_TEST_DIRNAME/fixtures/network/$2.json"}
 }
 
 @test "missing folder is skipped with a warning, others still exported" {
@@ -147,4 +149,84 @@ gen_json() {
 @test "export ids are unique and sequential from 10" {
     run --separate-stderr gen default
     assert_equal "$(grep -o 'Export_Id = [0-9]*' <<< "$output" | awk '{print $3}' | tr '\n' ' ')" "10 11 12 13 14 15 16 "
+}
+
+
+# --- authorized_ips "auto" (HA's primary LAN subnet) ---
+
+AUTO='{"authorized_ips":["auto"],"export_folders":["config"]}'
+
+@test "auto: wired primary interface resolves to its network" {
+    run --separate-stderr gen_json "$AUTO" wired
+    assert_success
+    assert_output --partial 'Clients = 192.168.1.0/24;'
+    [[ "$stderr" == *'authorized_ips "auto" -> 192.168.1.0/24 (primary interface end0, from Supervisor)'* ]]
+}
+
+@test "auto: non-octet prefix (/22) gives the right network" {
+    run --separate-stderr gen_json "$AUTO" wifi
+    assert_output --partial 'Clients = 10.0.4.0/22;'
+}
+
+@test "auto: only the primary interface is used" {
+    run --separate-stderr gen_json "$AUTO" multi
+    assert_output --partial 'Clients = 172.16.0.0/16;'
+    refute_output --partial '192.168.50'
+}
+
+@test "auto: Supervisor v2 field names are understood" {
+    run --separate-stderr gen_json "$AUTO" v2-shape
+    assert_output --partial 'Clients = 192.168.1.0/24;'
+}
+
+@test "auto: routing-table fallback is understood and named in the log" {
+    run --separate-stderr gen_json "$AUTO" fallback
+    assert_output --partial 'Clients = 192.168.20.0/24;'
+    [[ "$stderr" == *'(primary interface eth0, from routing table)'* ]]
+}
+
+@test "auto: combined with explicit entries, both are listed" {
+    run --separate-stderr gen_json '{"authorized_ips":["auto","10.20.0.0/24"],"export_folders":["config"]}' wired
+    assert_output --partial 'Clients = 192.168.1.0/24,10.20.0.0/24;'
+}
+
+@test "auto: duplicates are removed" {
+    run --separate-stderr gen_json '{"authorized_ips":["192.168.1.0/24","auto"],"export_folders":["config"]}' wired
+    assert_output --partial 'Clients = 192.168.1.0/24;'
+}
+
+@test "security: auto with a disconnected primary interface refuses to start" {
+    run --separate-stderr gen_json "$AUTO" primary-disconnected
+    assert_failure
+    [[ "$stderr" == *'authorized_ips "auto" could not be resolved'* ]]
+}
+
+@test "security: auto with no IPv4 address refuses to start" {
+    run --separate-stderr gen_json "$AUTO" no-ipv4
+    assert_failure
+    [[ "$stderr" == *'could not be resolved'* ]]
+}
+
+@test "security: auto never resolves to an overly broad network (/0-/7)" {
+    run --separate-stderr gen_json "$AUTO" too-broad
+    assert_failure
+    [[ "$stderr" == *'could not be resolved'* ]]
+}
+
+@test "security: auto with no network info refuses to start" {
+    run --separate-stderr gen_json "$AUTO"
+    assert_failure
+    [[ "$stderr" == *'could not be resolved'* ]]
+    refute_output --partial 'Clients'
+}
+
+@test "explicit-only authorized_ips ignore network info" {
+    run --separate-stderr gen_json '{"authorized_ips":["10.9.9.9"],"export_folders":["config"]}' wired
+    assert_output --partial 'Clients = 10.9.9.9;'
+    refute_output --partial '192.168.1.0/24'
+}
+
+@test "config.yaml defaults for new installs: auto, and share/media/backup only" {
+    run python3 -c 'import sys, json, yaml; o = yaml.safe_load(open(sys.argv[1]))["options"]; print(json.dumps([o["authorized_ips"], o["export_folders"]]))' "$CONFIG_YAML"
+    assert_output '[["auto"], ["share", "media", "backup"]]'
 }

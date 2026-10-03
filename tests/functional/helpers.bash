@@ -48,6 +48,8 @@ addon_run_args() {
         [[ " ${DROP_CAPS:-} " == *" $cap "* ]] || printf '%s\n' --cap-add "$cap"
     done
     printf '%s\n' -v "$WORK/data:/data" -v "$WORK/config:/config" -v "$WORK/media:/media"
+    # Test-only: replaces the network info "auto" resolves from.
+    [ -z "${NETWORK_INFO_OVERRIDE:-}" ] || printf '%s\n' -e "NETWORK_INFO_OVERRIDE=$NETWORK_INFO_OVERRIDE"
 }
 
 start_addon() {

@@ -304,3 +304,39 @@ PY
     stop_addon
     start_addon "$AUTHORISED"
 }
+
+# The harness has no Supervisor, so "auto" resolves from the routing table.
+host_primary_ip() {
+    docker exec "$NAME" ip -j -4 route get 1.1.1.1 | jq --raw-output '.[0].prefsrc'
+}
+
+@test "auto: resolves the host's LAN subnet; LAN clients mount, others are refused" {
+    stop_addon
+    start_addon '{"authorized_ips":["auto"],"export_folders":["config"]}'
+    local ip
+    ip=$(host_primary_ip)
+    [ -n "$ip" ] && [ "$ip" != null ] || fail "could not find the host's primary IP"
+    run docker logs "$NAME"
+    assert_output --regexp 'authorized_ips "auto" -> [0-9.]+/[0-9]+ \(primary interface [^ ]+, from routing table\)'
+    # A client on the LAN (the host's own LAN address) is allowed.
+    mount -t nfs4 -o soft,timeo=50,retrans=2 "$ip:/config" "$MNT"
+    run cat "$MNT/hello.txt"; assert_output "hello from config"
+    unmount_export
+    # Loopback isn't on the LAN subnet, so it is refused.
+    run mount_export /config
+    assert_failure
+    assert_output --partial "reason given by server: No such file or directory"
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+@test "security: auto refuses to start when the network can't be determined" {
+    stop_addon
+    : > "$WORK/data/empty-network.json"
+    NETWORK_INFO_OVERRIDE=/data/empty-network.json run start_addon '{"authorized_ips":["auto"],"export_folders":["config"]}'
+    assert_failure
+    run docker logs "$NAME"
+    assert_output --partial 'authorized_ips "auto" could not be resolved'
+    stop_addon
+    start_addon "$AUTHORISED"
+}

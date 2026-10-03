@@ -1,0 +1,19 @@
+---
+configuration:
+  authorized_ips:
+    name: Authorized IPs
+    description: >-
+      Clients allowed to mount the shares: IP addresses or subnets
+      (e.g. 192.168.1.0/24). "auto" means Home Assistant's own network,
+      worked out at each start; the log shows what it resolved to.
+  export_folders:
+    name: Shared folders
+    description: >-
+      Home Assistant folders to share over NFS. config, ssl, addons and
+      addon_configs can contain secrets and private keys; share them only
+      if you need to.
+  log_level:
+    name: Log level
+    description: >-
+      How much the app and NFS-Ganesha log. Leave at WARN unless you are
+      troubleshooting; DEBUG and above also print the generated configuration.

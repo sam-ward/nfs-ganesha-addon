@@ -8,12 +8,34 @@ echo "[NFS] Starting NFS-Ganesha (Debian Mode)..."
 echo "[NFS] App version: ${ADDON_VERSION:-unknown}"
 echo "[NFS] Ganesha version: $(/usr/bin/ganesha.nfsd -v 2>&1 | head -1)"
 
-# 1. Build Ganesha Configuration (logs IPs, folders and exports to stderr)
+# 1. Network info for authorized_ips "auto": the Supervisor's view of HA's
+# network, or else the host routing table (we run on the host network).
+NETWORK_INFO=/tmp/network-info.json
+: > "$NETWORK_INFO"
+if jq --exit-status '.authorized_ips | index("auto")' "$CONFIG_PATH" > /dev/null 2>&1; then
+    if [ -n "${NETWORK_INFO_OVERRIDE:-}" ]; then
+        cp "$NETWORK_INFO_OVERRIDE" "$NETWORK_INFO"   # tests only
+    elif [ -n "${SUPERVISOR_TOKEN:-}" ] && RESPONSE=$(curl -fsS --max-time 5 \
+            -H "Authorization: Bearer ${SUPERVISOR_TOKEN}" http://supervisor/network/info); then
+        jq '.data + {source: "Supervisor"}' <<< "$RESPONSE" > "$NETWORK_INFO" || : > "$NETWORK_INFO"
+    else
+        DEV=$(ip -j route show default 2>/dev/null | jq --raw-output '.[0].dev // empty')
+        if [ -n "$DEV" ]; then
+            ip -j -4 addr show dev "$DEV" | jq --arg dev "$DEV" '{source: "routing table",
+                interfaces: [{interface: $dev, connected: true, primary: true,
+                    ipv4: {address: [.[0].addr_info[] | select(.family == "inet")
+                                     | "\(.local)/\(.prefixlen)"]}}]}' > "$NETWORK_INFO" \
+                || : > "$NETWORK_INFO"
+        fi
+    fi
+fi
+
+# 2. Build Ganesha Configuration (logs IPs, folders and exports to stderr)
 CONF="/etc/ganesha/ganesha.conf"
 mkdir -p /etc/ganesha
-/gen-config.sh "$CONFIG_PATH" > "$CONF"
+/gen-config.sh "$CONFIG_PATH" / "$NETWORK_INFO" > "$CONF"
 
-# 2. Start DBUS
+# 3. Start DBUS
 echo "[NFS] Starting D-Bus..."
 mkdir -p /var/run/dbus
 if [ -e /var/run/dbus/pid ]; then rm /var/run/dbus/pid; fi
