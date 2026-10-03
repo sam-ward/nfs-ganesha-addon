@@ -1,5 +1,7 @@
 # Home Assistant NFS Server (Ganesha) App
 
+<img src="img/logo.svg" alt="NFS Server (Ganesha) logo" width="128" align="right">
+
 [![GitHub Release][releases-shield]][releases]
 [![License][license-shield]](LICENSE)
 
