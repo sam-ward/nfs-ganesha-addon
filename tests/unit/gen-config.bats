@@ -62,6 +62,24 @@ gen() { bash "$GEN" "$BATS_TEST_DIRNAME/fixtures/$1.json" "$ROOT"; }
     assert_output "True"
 }
 
+@test "log_level missing (upgraded install) defaults to WARN with 1.2.0 muting" {
+    run --separate-stderr gen single-ip
+    assert_output --partial 'Default_Log_Level = WARN;'
+    assert_output --partial 'TIRPC = FATAL;'
+}
+
+@test "log_level WARN keeps component muting" {
+    run --separate-stderr gen warn
+    assert_output --partial 'Default_Log_Level = WARN;'
+    assert_output --partial 'DISPATCH = FATAL;'
+}
+
+@test "log_level FULL_DEBUG drops muting so nothing is hidden" {
+    run --separate-stderr gen debug
+    assert_output --partial 'Default_Log_Level = FULL_DEBUG;'
+    refute_output --partial 'COMPONENTS'
+}
+
 # Runs the generator on inline JSON options (for cases without a golden file).
 gen_json() {
     printf '%s' "$1" > "$BATS_TEST_TMPDIR/options.json"

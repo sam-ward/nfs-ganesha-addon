@@ -97,6 +97,31 @@ export_folders:
   - media
 ```
 
+### Option: `log_level`
+
+**Required:** No  
+**Type:** One of `NULL`, `FATAL`, `MAJ`, `CRIT`, `WARN`, `EVENT`, `INFO`, `DEBUG`, `MID_DEBUG`, `FULL_DEBUG`  
+**Default:** `WARN`
+
+How much the app and the NFS server log. Leave it at `WARN` unless you're troubleshooting, because the debug levels are very verbose.
+
+**What the app logs at each level:**
+
+| Level | What you see in the app's log |
+|---|---|
+| Every level | The app version, the NFS-Ganesha version, the log level, the authorized IPs and each exported folder. Include these lines when you ask for help. |
+| `NULL` to `WARN` | NFS-Ganesha's warnings and errors. A few noisy Ganesha components (`TIRPC`, `NFS_CB`, `INIT`, `DISPATCH`) only log fatal errors, as in earlier versions. |
+| `EVENT` and above | Nothing is muted: every Ganesha component logs at the chosen level. |
+| `DEBUG`, `MID_DEBUG`, `FULL_DEBUG` | Also prints the full generated `ganesha.conf` before the server starts. It contains your authorized IPs and folder names. |
+
+For what each level means inside NFS-Ganesha, see the [NFS-Ganesha logging documentation](https://github.com/nfs-ganesha/nfs-ganesha/blob/next/src/doc/man/ganesha-log-config.rst).
+
+**Example:**
+
+```yaml
+log_level: DEBUG
+```
+
 ## Mounting from Clients
 
 ### Linux
@@ -205,6 +230,7 @@ umount Z:
 3. **Check addon logs:**
    - Settings → Apps → NFS Server (Ganesha) → Logs
    - Look for errors or warnings
+   - For more detail, set `log_level` to `DEBUG`, restart the app and try again
 
 ### `showmount -e` doesn't work
 

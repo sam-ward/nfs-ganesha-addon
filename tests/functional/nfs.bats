@@ -223,9 +223,8 @@ PY
 }
 
 @test "startup failure is visible in the log when port 2049 is taken" {
-    # 1.2.0 tails Ganesha's log file and kills the tail as soon as Ganesha exits,
-    # so the reason never reaches the add-on log ("Ganesha exited" only).
-    skip "enabled by log/exit-code change in PR #4 work"
+    # The reason must reach the add-on log, and the add-on must exit non-zero
+    # so the Supervisor shows it as an error.
     stop_addon
     python3 -m http.server 2049 --bind 0.0.0.0 >/dev/null 2>&1 &
     local holder=$!
@@ -233,10 +232,44 @@ PY
     local args
     mapfile -t args < <(addon_run_args)
     docker run -d --name "$NAME" "${args[@]}" "$IMAGE" >/dev/null
-    sleep 10
+    run timeout 30 docker wait "$NAME"
+    kill "$holder"; wait "$holder" 2>/dev/null || true
+    assert_success
+    refute_output 0
     run docker logs "$NAME"
-    kill "$holder"
     assert_output --regexp '[Aa]ddress already in use|bind'
+    assert_output --partial "Ganesha exited with code"
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+@test "startup log identifies the app and Ganesha versions, IPs and exports" {
+    run docker logs "$NAME"
+    assert_output --partial "[NFS] App version: $(addon_version)"
+    assert_output --regexp 'Ganesha version: NFS-Ganesha Release = V[0-9]'
+    assert_output --partial "[NFS] Authorized IPs: 127.0.0.1"
+    assert_output --partial "[NFS] Exporting: /config"
+    assert_output --partial "[NFS] Log level: WARN"
+    # The full config is only for debug levels.
+    refute_output --partial "Generated /etc/ganesha/ganesha.conf"
+}
+
+@test "log_level DEBUG also prints the generated ganesha.conf" {
+    stop_addon
+    start_addon '{"authorized_ips":["127.0.0.1"],"export_folders":["config","media"],"log_level":"DEBUG"}'
+    run docker logs "$NAME"
+    assert_output --partial "Generated /etc/ganesha/ganesha.conf"
+    assert_output --partial "Default_Log_Level = DEBUG;"
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+@test "every log_level value starts the daemon" {
+    for lvl in NULL FATAL MAJ CRIT WARN EVENT INFO DEBUG MID_DEBUG FULL_DEBUG; do
+        stop_addon
+        start_addon "{\"authorized_ips\":[\"127.0.0.1\"],\"export_folders\":[\"config\",\"media\"],\"log_level\":\"$lvl\"}" \
+            || fail "daemon did not start with log_level=$lvl"
+    done
     stop_addon
     start_addon "$AUTHORISED"
 }

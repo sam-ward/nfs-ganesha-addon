@@ -103,6 +103,21 @@ export_folders:
   - media
 ```
 
+#### `log_level` (optional)
+
+How much the app and the NFS server log. One of `NULL`, `FATAL`, `MAJ`, `CRIT`, `WARN`, `EVENT`, `INFO`, `DEBUG`, `MID_DEBUG` or `FULL_DEBUG`.
+
+- At every level, the log starts with the app version, the NFS-Ganesha version, the authorized IPs and the exported folders.
+- `EVENT` and above stop muting Ganesha's noisier components.
+- `DEBUG`, `MID_DEBUG` and `FULL_DEBUG` also print the full generated `ganesha.conf`.
+
+See the app's Documentation tab for details, and the [NFS-Ganesha logging documentation](https://github.com/nfs-ganesha/nfs-ganesha/blob/next/src/doc/man/ganesha-log-config.rst) for what each level means inside Ganesha.
+
+**Default:** `WARN`
+```yaml
+log_level: WARN
+```
+
 ## Mounting from Clients
 
 ### Linux

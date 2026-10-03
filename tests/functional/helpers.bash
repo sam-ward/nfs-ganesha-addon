@@ -9,8 +9,15 @@ ADDON_LOG="$LOG_DIR/addon.log"
 # Files we create run as root in the toolbox; hand them back to the repo's owner.
 REPO_OWNER="$(stat -c %u:%g "$REPO_ROOT")"
 
+# The add-on version in config.yaml. The Supervisor passes it to the build as BUILD_VERSION.
+addon_version() {
+    python3 -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))["version"])' \
+        "$REPO_ROOT/nfs-ganesha/config.yaml"
+}
+
 build_image() {
-    [ "${SKIP_BUILD:-0}" = 1 ] || docker build -q -t "$IMAGE" "$REPO_ROOT/nfs-ganesha" >/dev/null
+    [ "${SKIP_BUILD:-0}" = 1 ] || docker build -q --build-arg "BUILD_VERSION=$(addon_version)" \
+        -t "$IMAGE" "$REPO_ROOT/nfs-ganesha" >/dev/null
 }
 
 reset_log() {

@@ -14,6 +14,23 @@ AUTHORIZED_IPS=$(jq --raw-output \
 # Read the export_folders array
 EXPORT_FOLDERS=$(jq --raw-output '.export_folders[]? | strings' "$CONFIG_PATH")
 
+# Missing on installs upgraded from <=1.2.x, so fall back to the default.
+LOG_LEVEL=$(jq --raw-output '.log_level // "WARN"' "$CONFIG_PATH")
+echo "[NFS] Log level: ${LOG_LEVEL}" >&2
+
+# At WARN and quieter, keep 1.2.x's muting of chatty components. At EVENT and
+# above the user is debugging, so show everything.
+case "$LOG_LEVEL" in
+    NULL|FATAL|MAJ|CRIT|WARN)
+        LOG_COMPONENTS="COMPONENTS {
+        TIRPC = FATAL;
+        NFS_CB = FATAL;
+        INIT = FATAL;
+        DISPATCH = FATAL;
+    }" ;;
+    *) LOG_COMPONENTS="" ;;
+esac
+
 echo "[NFS] Authorized IPs: ${AUTHORIZED_IPS}" >&2
 echo "[NFS] Export folders: $(jq --raw-output '.export_folders | join(", ")' "$CONFIG_PATH")" >&2
 
@@ -59,13 +76,8 @@ NFS_KRB5
 }
 
 LOG {
-    Default_Log_Level = WARN;
-    COMPONENTS {
-        TIRPC = FATAL;
-        NFS_CB = FATAL;
-        INIT = FATAL;
-        DISPATCH = FATAL;
-    }
+    Default_Log_Level = ${LOG_LEVEL};
+    ${LOG_COMPONENTS}
 }
 EOF
 

@@ -14,6 +14,10 @@ RUN echo 'deb http://deb.debian.org/debian trixie-backports main' > /etc/apt/sou
         jq \
     && rm -rf /var/lib/apt/lists/*
 
+# The Supervisor (and HA's image builder) pass the app version; run.sh logs it.
+ARG BUILD_VERSION=unknown
+ENV ADDON_VERSION=${BUILD_VERSION}
+
 # Create required directories
 RUN mkdir -p /var/run/ganesha \
     && mkdir -p /var/run/dbus

@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - Fewer privileges: the app no longer needs SYS_ADMIN, and AppArmor is now enabled. The security rating improves from 2 to 3.
  - The app now requests the SYS_RESOURCE capability so Ganesha can register as an IO flusher, which avoids stalls under memory pressure. If the capability is unavailable it still starts. SYS_RESOURCE doesn't affect the rating.
  - Dropped armhf, armv7 and i386 (no longer supported by Home Assistant since 2025.12).
+ - New optional `log_level` setting (default `WARN`) for troubleshooting. Debug levels also print the generated ganesha.conf.
+ - The log now always starts with the app and NFS-Ganesha versions, so a pasted log shows exactly what is running.
+ - Ganesha now logs straight to the app log, so the reason for a startup failure is no longer lost. The app exits with Ganesha's exit code when it stops, so crashes show as errors.
  - Documentation: support links now point to the Home Assistant Community thread (GitHub Discussions isn't enabled), plus small fixes (PR #8).
 
 ## [1.2.1] - 2026-09-30
