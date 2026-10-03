@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - New optional `log_level` setting (default `WARN`) for troubleshooting. Debug levels also print the generated ganesha.conf.
  - The log now always starts with the app and NFS-Ganesha versions, so a pasted log shows exactly what is running.
  - Ganesha now logs straight to the app log, so the reason for a startup failure is no longer lost. The app exits with Ganesha's exit code when it stops, so crashes show as errors.
+ - Quieter startup: at `WARN` and below, the app hides the ~45 lines NFS-Ganesha prints about log-level changes at every start.
+ - Stopping the app now shuts NFS-Ganesha down cleanly, instead of it being force-killed after 10 seconds.
  - Documentation: support links now point to the Home Assistant Community thread (GitHub Discussions isn't enabled), plus small fixes (PR #8).
 
 ## [1.2.1] - 2026-09-30

@@ -110,8 +110,8 @@ How much the app and the NFS server log. Leave it at `WARN` unless you're troubl
 | Level | What you see in the app's log |
 |---|---|
 | Every level | The app version, the NFS-Ganesha version, the log level, the authorized IPs and each exported folder. Include these lines when you ask for help. |
-| `NULL` to `WARN` | NFS-Ganesha's warnings and errors. A few noisy Ganesha components (`TIRPC`, `NFS_CB`, `INIT`, `DISPATCH`) only log fatal errors, as in earlier versions. |
-| `EVENT` and above | Nothing is muted: every Ganesha component logs at the chosen level. |
+| `NULL` to `WARN` | NFS-Ganesha's warnings and errors. A few noisy Ganesha components (`TIRPC`, `NFS_CB`, `INIT`, `DISPATCH`) only log fatal errors, as in earlier versions, and Ganesha's messages about log-level changes are hidden. |
+| `EVENT` and above | Nothing is muted or hidden: every Ganesha component logs at the chosen level. |
 | `DEBUG`, `MID_DEBUG`, `FULL_DEBUG` | Also prints the full generated `ganesha.conf` before the server starts. It contains your authorized IPs and folder names. |
 
 For what each level means inside NFS-Ganesha, see the [NFS-Ganesha logging documentation](https://github.com/nfs-ganesha/nfs-ganesha/blob/next/src/doc/man/ganesha-log-config.rst).

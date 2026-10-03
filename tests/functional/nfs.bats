@@ -273,3 +273,34 @@ PY
     stop_addon
     start_addon "$AUTHORISED"
 }
+
+@test "at WARN, Ganesha's log-level change chatter is filtered out" {
+    # Ganesha logs every log-level change at NIV_NULL (always shown), about
+    # 45 lines per start. They carry no information at the default level.
+    run docker logs "$NAME"
+    refute_output --partial " :LOG :NULL :LOG: "
+    assert_output --partial "[NFS] Launching Ganesha Daemon..."
+}
+
+@test "at EVENT and above, nothing is filtered" {
+    stop_addon
+    start_addon '{"authorized_ips":["127.0.0.1"],"export_folders":["config","media"],"log_level":"EVENT"}'
+    run docker logs "$NAME"
+    assert_output --partial " :LOG :NULL :LOG: "
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+@test "stopping the add-on shuts Ganesha down cleanly (no SIGKILL)" {
+    local start elapsed
+    start=$(date +%s)
+    docker stop -t 20 "$NAME" >/dev/null
+    elapsed=$(( $(date +%s) - start ))
+    run docker inspect -f '{{.State.ExitCode}}' "$NAME"
+    assert_output 0
+    (( elapsed < 15 )) || fail "stop took ${elapsed}s; Ganesha did not get the signal"
+    run docker logs "$NAME"
+    assert_output --partial "[NFS] Ganesha exited with code 0"
+    stop_addon
+    start_addon "$AUTHORISED"
+}
