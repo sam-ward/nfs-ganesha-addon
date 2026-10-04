@@ -263,6 +263,7 @@ PY
     assert_output --partial "[NFS] Log level: WARN"
     # The full config is only for debug levels.
     refute_output --partial "Generated /etc/ganesha/ganesha.conf"
+    refute_output --partial "is NOT being shared"
 }
 
 @test "log_level DEBUG also prints the generated ganesha.conf" {
@@ -668,4 +669,23 @@ PY
     assert_failure
     run docker exec "$NAME" /healthcheck.sh
     assert_success
+}
+
+@test "a folder Ganesha can't export is reported clearly, and the rest keep working" {
+    # Ganesha carries on without an export it can't create (here: tmpfs, which
+    # FSAL_VFS doesn't support), so the add-on must say which folder is missing.
+    stop_addon
+    MEDIA_MOUNT="--tmpfs /media" start_addon "$AUTHORISED"
+    local i
+    for i in $(seq 1 20); do
+        docker logs "$NAME" 2>&1 | grep -q "NOT being shared" && break; sleep 1
+    done
+    run docker logs "$NAME"
+    assert_output --partial "[ERROR] /media is NOT being shared"
+    refute_output --partial "[ERROR] /config is NOT being shared"
+    mount_export /config
+    run cat "$MNT/hello.txt"; assert_output "hello from config"
+    unmount_export
+    stop_addon
+    start_addon "$AUTHORISED"
 }

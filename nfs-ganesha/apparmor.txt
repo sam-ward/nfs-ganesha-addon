@@ -13,7 +13,7 @@ profile nfs_ganesha flags=(attach_disconnected,mediate_deleted) {
   /migrate-options.sh rix,
   /usr/bin/bash ix,
   /dev/tty rw,
-  /usr/bin/{cat,cp,grep,head,jq,mkdir,mkfifo,rm,sed,sleep} ix,
+  /usr/bin/{cat,cp,grep,head,jq,mkdir,mkfifo,paste,rm,sed,sleep} ix,
   # Docker HEALTHCHECK (an NFS NULL call to 127.0.0.1:2049)
   /healthcheck.sh rix,
   /usr/bin/{od,timeout,tr} ix,
@@ -38,6 +38,8 @@ profile nfs_ganesha flags=(attach_disconnected,mediate_deleted) {
 
   # D-Bus system bus, which Ganesha registers on
   /usr/bin/dbus-daemon ix,
+  # Asking Ganesha which exports exist (run.sh's startup check)
+  /usr/bin/dbus-send ix,
   capability setuid,
   capability setgid,
   /usr/share/dbus-1/{,**} r,

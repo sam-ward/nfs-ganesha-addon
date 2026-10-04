@@ -134,6 +134,30 @@ FILTER_PID=$!
 /usr/bin/ganesha.nfsd -F -L STDOUT -N "NIV_${LOG_LEVEL}" -f "$CONF" > "$LOG_FIFO" 2>&1 &
 GANESHA_PID=$!
 
+# Ganesha carries on without an export it can't create (for example a folder
+# on an unsupported filesystem), which clients only see as "No such file or
+# directory". Once it is up, ask it over D-Bus which exports exist, and name
+# any folder that is missing.
+check_exports() {
+    local reply="" have id pseudo
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+        reply=$(dbus-send --system --print-reply --dest=org.ganesha.nfsd \
+            /org/ganesha/nfsd/ExportMgr org.ganesha.nfsd.exportmgr.ShowExports 2>/dev/null) && break
+        reply=""
+        sleep 1
+    done
+    if [ -z "$reply" ]; then
+        echo "[WARN] Could not ask NFS-Ganesha which folders it is sharing"
+        return
+    fi
+    # Export ids Ganesha reports, and each export's id and path in ganesha.conf.
+    have=" $(sed -n 's/^ *uint16 \([0-9]*\)$/\1/p' <<< "$reply" | tr '\n' ' ')"
+    while read -r id pseudo; do
+        [[ "$have" == *" $id "* ]] || echo "[ERROR] $pseudo is NOT being shared: NFS-Ganesha could not export it (see its CRIT lines above)"
+    done < <(sed -n 's/^    Export_Id = \([0-9]*\);$/\1/p; s/^    Pseudo = "\(.*\)";$/\1/p' "$CONF" | paste -d' ' - -)
+}
+check_exports &
+
 RC=0
 wait "$GANESHA_PID" || RC=$?
 # A trapped signal interrupts wait; wait again for Ganesha's own exit code.
