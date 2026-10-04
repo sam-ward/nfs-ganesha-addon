@@ -414,3 +414,10 @@ exports() { awk -F'"' '/^    Path = /{p=$2} /^    Pseudo = /{print p " -> " $2}'
     run --separate-stderr gen_json "$AUTO" wired
     [[ "$stderr" != *"[WARN] authorized_ips"* ]]
 }
+
+@test "config.yaml points the Supervisor at the published images" {
+    # publish.yml pushes ghcr.io/<owner>/{arch}-addon-nfs_ganesha:<version>
+    # ({arch}-addon-<slug>, as the official apps and on-device builds name them).
+    run python3 -c 'import sys, yaml; c = yaml.safe_load(open(sys.argv[1])); print(c["image"], c["slug"])' "$CONFIG_YAML"
+    assert_output "ghcr.io/sam-ward/{arch}-addon-nfs_ganesha nfs_ganesha"
+}

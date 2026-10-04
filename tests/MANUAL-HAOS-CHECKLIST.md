@@ -14,7 +14,11 @@ Docker and `/dev/kvm`). Record the results in the release PR.
    (`tests/haos/haos-vm.sh api GET store/addons`).
 3. For the upgrade, make a local, never-pushed branch from the release branch
    with only `version` bumped above the released one, and serve it with
-   `tests/haos/haos-vm.sh repo <branch>`, then `api POST store/reload`.
+   `tests/haos/haos-vm.sh repo <branch>`, then `api POST store/reload`. Also
+   remove `image:` from that branch's `config.yaml`, so the Supervisor builds
+   the app instead of pulling an image that was never published. (To test
+   published images, e.g. a release candidate, keep `image:` and use the
+   real version.)
 
 ## Automated checks
 

@@ -3,6 +3,9 @@ version: "1.2.1"
 slug: nfs_ganesha
 description: Expose Home Assistant folders via NFS using nfs-ganesha
 url: https://github.com/sam-ward/nfs-ganesha-addon
+# Prebuilt images, published by .github/workflows/publish.yml and tested
+# before they're pushed; the Supervisor pulls these instead of building.
+image: ghcr.io/sam-ward/{arch}-addon-nfs_ganesha
 startup: system
 arch:
   - aarch64

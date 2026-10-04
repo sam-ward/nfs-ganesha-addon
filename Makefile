@@ -13,9 +13,11 @@ RUN = docker run --rm -v "$(CURDIR):$(CURDIR)" -w "$(CURDIR)" \
 # Functional tests mount NFS and drive the host's Docker, so they run as root,
 # privileged, on the host network. They see host PIDs so they can inspect the
 # add-on's processes from outside (docker exec would run under its AppArmor profile).
+# IMAGE and SKIP_BUILD (when set) make it test a given image, e.g. the exact
+# image the publish workflow is about to push.
 RUN_PRIV = docker run --rm -v "$(CURDIR):$(CURDIR)" -w "$(CURDIR)" \
 	--privileged --network host --pid host -v /var/run/docker.sock:/var/run/docker.sock \
-	$(TOOLBOX)
+	-e IMAGE -e SKIP_BUILD $(TOOLBOX)
 endif
 
 .PHONY: toolbox lint unit functional test clean

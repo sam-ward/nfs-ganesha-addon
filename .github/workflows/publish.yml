@@ -1,0 +1,142 @@
+name: Publish images
+
+# Builds the app's image for each architecture, runs the functional tests
+# against that exact image, and pushes it to GHCR, where the Supervisor
+# pulls it from (config.yaml's image:).
+#
+# - A version tag (v2.0.0, v2.0.0-rc1) publishes; the tag must match
+#   config.yaml's version.
+# - Run manually to build and test, or tick "push" for a dry run with a
+#   throwaway version.
+# - Pull requests that change this workflow or the app's build only build and
+#   test, so updates to the build actions are tried before they're merged.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      push:
+        description: Push the images (for a dry run with a throwaway version)
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - .github/workflows/publish.yml
+      - nfs-ganesha/Dockerfile
+      - nfs-ganesha/patches/**
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      push: ${{ steps.version.outputs.push }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: version
+        env:
+          PUSH_INPUT: ${{ inputs.push }}
+        run: |
+          version=$(sed -n 's/^version: *"\{0,1\}\([^"]*\)"\{0,1\} *$/\1/p' nfs-ganesha/config.yaml)
+          push=false
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+              echo "::error::Tag $GITHUB_REF_NAME doesn't match config.yaml's version $version"
+              exit 1
+            fi
+            push=true
+          elif [ "$PUSH_INPUT" = true ]; then
+            push=true
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "push=$push" >> "$GITHUB_OUTPUT"
+          echo "Version $version, push: $push"
+      - id: matrix
+        uses: home-assistant/builder/actions/prepare-multi-arch-matrix@2026.09.0
+        with:
+          architectures: '["amd64", "aarch64"]'
+          image-name: addon-nfs_ganesha
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    name: build (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      packages: write   # push to GHCR
+      id-token: write   # cosign keyless signing
+    env:
+      IMAGE: ${{ matrix.image }}:${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build (loaded locally, not pushed)
+        uses: home-assistant/builder/actions/build-image@2026.09.0
+        with:
+          arch: ${{ matrix.arch }}
+          context: nfs-ganesha
+          image: ${{ matrix.image }}
+          image-tags: ${{ needs.prepare.outputs.version }}
+          version: ${{ needs.prepare.outputs.version }}
+          labels: |
+            io.hass.type=app
+            io.hass.name=NFS Server (Ganesha)
+            io.hass.description=Expose Home Assistant folders via NFS using nfs-ganesha
+            io.hass.url=https://github.com/sam-ward/nfs-ganesha-addon
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          load: "true"
+          push: "false"
+
+      - name: Port 2049 is free
+        run: "! ss -tln | grep -E ':2049\\b'"
+
+      - name: Test this exact image
+        run: |
+          echo "TESTED_LAYERS=$(docker image inspect -f '{{json .RootFS.Layers}}' "$IMAGE")" >> "$GITHUB_ENV"
+          SKIP_BUILD=1 make functional
+
+      - if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: publish-addon-log-${{ matrix.arch }}
+          path: .test-logs/addon.log
+          if-no-files-found: ignore
+
+      - name: Push (rebuilt from the cache, signed with cosign)
+        if: needs.prepare.outputs.push == 'true'
+        uses: home-assistant/builder/actions/build-image@2026.09.0
+        with:
+          arch: ${{ matrix.arch }}
+          context: nfs-ganesha
+          image: ${{ matrix.image }}
+          image-tags: ${{ needs.prepare.outputs.version }}
+          version: ${{ needs.prepare.outputs.version }}
+          labels: |
+            io.hass.type=app
+            io.hass.name=NFS Server (Ganesha)
+            io.hass.description=Expose Home Assistant folders via NFS using nfs-ganesha
+            io.hass.url=https://github.com/sam-ward/nfs-ganesha-addon
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          load: "false"
+          push: "true"
+
+      # Compares filesystem layers: the image ids differ because the build
+      # stamps its creation time into a label each time it runs.
+      - name: The pushed image has the tested contents
+        if: needs.prepare.outputs.push == 'true'
+        run: |
+          docker image rm "$IMAGE" > /dev/null
+          docker pull -q "$IMAGE" > /dev/null
+          pushed=$(docker image inspect -f '{{json .RootFS.Layers}}' "$IMAGE")
+          if [ "$pushed" != "$TESTED_LAYERS" ]; then
+            echo "::error::The pushed image's layers differ from the tested image's"
+            exit 1
+          fi

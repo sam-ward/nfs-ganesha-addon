@@ -2,8 +2,13 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, beta]
   pull_request:
+  # Weekly, to catch drift nobody committed: base image updates, Debian
+  # package changes, the pinned Ganesha source leaving trixie-backports.
+  # GitHub emails the repository owner when a scheduled run fails.
+  schedule:
+    - cron: "17 3 * * 1"
 
 permissions:
   contents: read
@@ -42,8 +47,8 @@ jobs:
 
   functional:
     needs: [changes]
-    # Docs-only PRs skip the NFS tests; pushes to main always run them.
-    if: needs.changes.outputs.addon == 'true' || github.event_name == 'push'
+    # Docs-only PRs skip the NFS tests; pushes and the weekly run always run them.
+    if: needs.changes.outputs.addon == 'true' || github.event_name != 'pull_request'
     strategy:
       fail-fast: false
       matrix:
@@ -63,3 +68,28 @@ jobs:
           name: addon-log-${{ matrix.arch }}
           path: .test-logs/addon.log
           if-no-files-found: ignore
+
+  images:
+    # The Supervisor pulls config.yaml's image at its version, so main must
+    # never advertise a version whose images aren't published (and public).
+    # Releases publish the images first (tag), then merge to main.
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Images exist for config.yaml's version
+        run: |
+          image=$(sed -n 's/^image: *//p' nfs-ganesha/config.yaml)
+          version=$(sed -n 's/^version: *"\{0,1\}\([^"]*\)"\{0,1\} *$/\1/p' nfs-ganesha/config.yaml)
+          if [ -z "$image" ]; then
+            echo "config.yaml has no image: the Supervisor builds the app on the device"
+            exit 0
+          fi
+          for arch in amd64 aarch64; do
+            ref="${image/\{arch\}/$arch}:$version"
+            if ! docker manifest inspect "$ref" > /dev/null; then
+              echo "::error::$ref isn't published (or isn't public)"
+              exit 1
+            fi
+            echo "$ref is published"
+          done
