@@ -51,7 +51,9 @@ fi
 NETWORK_INFO=/tmp/network-info.json
 gather_network_info() {
     : > "$NETWORK_INFO"
-    jq --exit-status '.authorized_ips | index("auto")' "$CONFIG_PATH" > /dev/null 2>&1 || return 0
+    # As gen-config.sh does: "auto" in any case, ignoring surrounding spaces.
+    jq --exit-status '[.authorized_ips[]? | strings | gsub("^\\s+|\\s+$"; "") | ascii_downcase] | index("auto")' \
+        "$CONFIG_PATH" > /dev/null 2>&1 || return 0
     if [ -n "${NETWORK_INFO_OVERRIDE:-}" ]; then
         cp "$NETWORK_INFO_OVERRIDE" "$NETWORK_INFO"   # tests only
     elif [ -n "${SUPERVISOR_TOKEN:-}" ] && RESPONSE=$(curl -fsS --max-time 5 \

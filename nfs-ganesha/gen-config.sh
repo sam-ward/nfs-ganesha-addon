@@ -36,6 +36,35 @@ resolve_auto() {
     AUTO_SOURCE=$(jq --raw-output '.source // "network info"' "$NETWORK_INFO")
 }
 
+# True if $1 is an entry Ganesha's Clients list can take safely: "*", an IPv4
+# address or CIDR, an IPv6 address or CIDR, a netgroup (@name), a host name
+# pattern (with * or ?), or a hostname. Anything else could be a typo that
+# silently matches no one, or break ganesha.conf.
+valid_client() {
+    local e=$1 o
+    [ "$e" = "*" ] && return 0
+    [[ "$e" =~ ^@[A-Za-z0-9._-]+$ ]] && return 0
+    if [[ "$e" == *[*?]* ]]; then
+        # "]" first: the only way to put a literal ] in a bracket expression.
+        [[ "$e" =~ ^[][A-Za-z0-9.*?-]+$ ]]
+        return
+    fi
+    if [[ "$e" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)(/([0-9]+))?$ ]]; then
+        for o in 1 2 3 4; do (( BASH_REMATCH[o] <= 255 )) || return 1; done
+        [ -z "${BASH_REMATCH[5]}" ] || (( BASH_REMATCH[6] <= 32 ))
+        return
+    fi
+    if [[ "$e" == *:* ]]; then
+        [[ "$e" =~ ^[0-9A-Fa-f:.]+(/([0-9]+))?$ ]] || return 1
+        [ -z "${BASH_REMATCH[1]}" ] || (( BASH_REMATCH[2] <= 128 ))
+        return
+    fi
+    # A hostname: dot-separated labels of letters, digits and inner hyphens,
+    # with at least one letter (an all-numeric entry must be a valid IPv4).
+    [[ "$e" =~ ^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$ ]] \
+        && [[ "$e" == *[A-Za-z]* ]]
+}
+
 # Read the authorized_ips array, blank entries dropped
 mapfile -t IP_ENTRIES < <(jq --raw-output \
     '.authorized_ips[]? | strings | gsub("^\\s+|\\s+$"; "") | select(length > 0)' \
@@ -44,6 +73,11 @@ mapfile -t IP_ENTRIES < <(jq --raw-output \
 # Replace "auto" with HA's primary subnet. Never guess: refuse if it can't be resolved.
 CLIENTS=()
 for entry in "${IP_ENTRIES[@]}"; do
+    [ "${entry,,}" != auto ] || entry=auto
+    if [ "$entry" != auto ] && ! valid_client "$entry"; then
+        echo "[ERROR] authorized_ips entry \"$entry\" is not an IP address, subnet (e.g. 192.168.1.0/24), hostname or pattern, @netgroup, \"auto\" or \"*\". Refusing to start." >&2
+        exit 1
+    fi
     if [ "$entry" = auto ]; then
         if ! resolve_auto; then
             echo "[ERROR] authorized_ips \"auto\" could not be resolved (no connected primary network with an IPv4 address); set your subnet explicitly, e.g. 192.168.1.0/24. Refusing to start." >&2

@@ -523,3 +523,14 @@ PY
     stop_addon
     start_addon "$AUTHORISED"
 }
+
+@test "auto written as \" Auto \" still fetches the network info and resolves" {
+    # run.sh decides whether to fetch network info; it must recognise "auto"
+    # the same way gen-config.sh does (any case, surrounding spaces ignored).
+    stop_addon
+    start_addon '{"authorized_ips":[" Auto "],"export_folders":["config"]}'
+    run docker logs "$NAME"
+    assert_output --regexp 'authorized_ips "auto" -> [0-9.]+/[0-9]+ \(primary interface [^ ]+, from routing table\)'
+    stop_addon
+    start_addon "$AUTHORISED"
+}

@@ -344,3 +344,28 @@ exports() { awk -F'"' '/^    Path = /{p=$2} /^    Pseudo = /{print p " -> " $2}'
     run python3 -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1])).get("watchdog"))' "$CONFIG_YAML"
     assert_output "tcp://[HOST]:2049"
 }
+
+# --- authorized_ips validation ---
+
+@test "security: malformed authorized_ips entries refuse to start, naming the entry" {
+    local bad
+    for bad in "192.168.1.0/33" "192.168.1.300" "a b" "a,b" "10.0.0.1;" "}" "fe80::/129" "10.0.0.0/" "-host"; do
+        run --separate-stderr gen_json "{\"authorized_ips\":[\"$bad\"],\"export_folders\":[\"config\"]}"
+        assert_failure
+        [[ "$stderr" == *"authorized_ips entry \"$bad\" is not"* ]] || fail "no clear error for '$bad': $stderr"
+        refute_output --partial "Clients ="
+    done
+}
+
+@test "valid authorized_ips forms are accepted as written" {
+    # Every form Ganesha documents for Clients, so configs saved by 1.2.x keep working.
+    run --separate-stderr gen_json '{"authorized_ips":["192.168.1.5","10.0.0.0/8","fe80::/10","2001:db8::1","nas.local","*","@lan","*.lan","192.168.1.*","pc-[12]?"],"export_folders":["config"]}'
+    assert_success
+    assert_output --partial 'Clients = 192.168.1.5,10.0.0.0/8,fe80::/10,2001:db8::1,nas.local,*,@lan,*.lan,192.168.1.*,pc-[12]?;'
+}
+
+@test "auto is recognised regardless of case and surrounding spaces" {
+    run --separate-stderr gen_json '{"authorized_ips":[" Auto "],"export_folders":["config"]}' wired
+    assert_success
+    assert_output --partial 'Clients = 192.168.1.0/24;'
+}
