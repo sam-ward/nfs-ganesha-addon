@@ -381,3 +381,36 @@ exports() { awk -F'"' '/^    Path = /{p=$2} /^    Pseudo = /{print p " -> " $2}'
     run --separate-stderr gen default
     assert_output --regexp 'EXPORT_DEFAULTS'$'\n''\{[^}]*Attr_Expiration_Time = 0;'
 }
+
+# --- Warning about broad client lists ---
+# Every allowed client can reach more than the shared folders (they share one
+# filesystem), so a broad list deserves a warning at startup.
+
+@test "broad authorized_ips warn at startup" {
+    local ips
+    for ips in '"*"' '"*.lan"' '"10.0.0.0/8"' '"192.168.0.0/15"' \
+               '"10.0.0.0/8","172.16.0.0/12","192.168.0.0/16"' \
+               '"192.168.1.0/24","192.168.2.0/24"' '"fd00::/48"'; do
+        run --separate-stderr gen_json "{\"authorized_ips\":[$ips],\"export_folders\":[\"config\"]}"
+        assert_success
+        [[ "$stderr" == *"[WARN] authorized_ips"*"trust with all of Home Assistant's data"* ]] \
+            || fail "no warning for [$ips]: $stderr"
+    done
+}
+
+@test "auto plus another subnet warns (more than one subnet)" {
+    run --separate-stderr gen_json '{"authorized_ips":["auto","10.20.0.0/24"],"export_folders":["config"]}' wired
+    [[ "$stderr" == *"[WARN] authorized_ips"* ]]
+}
+
+@test "narrow authorized_ips don't warn" {
+    local ips
+    for ips in '"192.168.1.0/24"' '"192.168.0.0/16"' '"192.168.1.5"' '"192.168.1.5","192.168.1.6/32","nas.local"' \
+               '"192.168.1.0/24","192.168.1.50"' '"fd00:1:2:3::/64"' '"@lan"'; do
+        run --separate-stderr gen_json "{\"authorized_ips\":[$ips],\"export_folders\":[\"config\"]}"
+        assert_success
+        [[ "$stderr" != *"[WARN] authorized_ips"* ]] || fail "unexpected warning for [$ips]: $stderr"
+    done
+    run --separate-stderr gen_json "$AUTO" wired
+    [[ "$stderr" != *"[WARN] authorized_ips"* ]]
+}

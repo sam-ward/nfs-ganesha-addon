@@ -61,7 +61,7 @@ export_folders:
 
 #### `authorized_ips` (required)
 
-List of IP addresses or CIDR subnets allowed to access the NFS shares, and/or `auto`. Each entry must be an IPv4 or IPv6 address, a subnet (for example `192.168.1.0/24`), a hostname or host pattern (`*.lan`), a netgroup (`@name`), `auto` or `*`; if an entry is anything else (a typo such as `192.168.1.0/33`), the app refuses to start and names it in the log.
+List of IP addresses or CIDR subnets allowed to access the NFS shares, and/or `auto`. **Treat every client you allow as trusted with all of Home Assistant's data, not just the shared folders**, and keep this list tight: see "Security" in the app's Documentation. Each entry must be an IPv4 or IPv6 address, a subnet (for example `192.168.1.0/24`), a hostname or host pattern (`*.lan`), a netgroup (`@name`), `auto` or `*`; if an entry is anything else (a typo such as `192.168.1.0/33`), the app refuses to start and names it in the log.
 
 `auto` is replaced at each start by the subnet of Home Assistant's primary network interface (from Settings → System → Network), for example `192.168.1.0/24`. If it can't work it out yet (for example while Home Assistant is still starting its network), the app waits for up to a minute; if it still can't, it refuses to start and logs why, rather than guessing. Clients on other subnets, VPNs or VLANs need their own entries.
 

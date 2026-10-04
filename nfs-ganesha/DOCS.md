@@ -316,9 +316,11 @@ sudo mount -t nfs4 <HA_IP>:/ /mnt/homeassistant
    mount -t nfs4 -o rsize=1048576,wsize=1048576 <HA_IP>:/ /mnt/ha
    ```
 
-## Security Considerations
+## Security
 
-1. **Use specific IPs/subnets** - Don't use `*` in production
+**Treat every client in `authorized_ips` as trusted with all of Home Assistant's data.** The folders this app shares sit on the same filesystem as everything else: Home Assistant's configuration and secrets, other apps' data, and backups. NFS identifies files by "file handles", and [NFS-Ganesha's documentation](https://github.com/nfs-ganesha/nfs-ganesha/blob/next/src/doc/man/ganesha-export-config.rst) notes that when one filesystem is shared as several exports, a rogue client may be able to forge file handles and reach parts of it that weren't shared with it. So the folders you choose control what clients normally see, but they aren't a barrier against an allowed machine that deliberately crafts NFS requests: `authorized_ips` is the real boundary. This is how NFS generally works, including Linux's own NFS server by default.
+
+1. **Keep `authorized_ips` tight** - Prefer `auto` or specific addresses; avoid broad ranges, and never use `*`. The app logs a warning at startup when the list is broad (`*` or a host pattern, a subnet wider than `/16`, or more than one subnet).
 2. **Network isolation** - Keep NFS on a trusted network/VLAN
 3. **No encryption** - NFSv4 traffic is not encrypted (use VPN if needed)
 4. **Firewall** - Consider blocking port 2049 at your network edge

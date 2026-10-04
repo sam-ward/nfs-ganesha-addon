@@ -88,6 +88,28 @@ for entry in "${IP_ENTRIES[@]}"; do
     fi
     [[ " ${CLIENTS[*]} " == *" $entry "* ]] || CLIENTS+=("$entry")
 done
+# Warn about a broad client list. All shared folders sit on one filesystem
+# with the rest of Home Assistant's data, and NFS file handles can be forged,
+# so every allowed client should be trusted with all of it (Ganesha documents
+# this). Broad means "*", a host pattern, a subnet wider than /16 (IPv6: /64),
+# or more than one subnet.
+BROAD=()
+SUBNETS=0
+for c in "${CLIENTS[@]}"; do
+    case "$c" in
+        *[*?]*) BROAD+=("$c") ;;
+        */*)
+            p=${c#*/}
+            if [[ "$c" == *:* ]]; then wide=64 host=128; else wide=16 host=32; fi
+            if (( p < wide )); then BROAD+=("$c"); fi
+            if (( p < host )); then SUBNETS=$((SUBNETS + 1)); fi
+            ;;
+    esac
+done
+if (( ${#BROAD[@]} > 0 || SUBNETS > 1 )); then
+    echo "[WARN] authorized_ips allows a wide range of clients (${CLIENTS[*]}). Every allowed client should be a machine you trust with all of Home Assistant's data: see \"Security\" in the app's Documentation. Prefer \"auto\" or specific addresses." >&2
+fi
+
 # Join with commas for Ganesha
 AUTHORIZED_IPS=$(IFS=,; echo "${CLIENTS[*]}")
 
