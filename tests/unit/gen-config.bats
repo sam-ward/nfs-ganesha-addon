@@ -369,3 +369,11 @@ exports() { awk -F'"' '/^    Path = /{p=$2} /^    Pseudo = /{print p " -> " $2}'
     assert_success
     assert_output --partial 'Clients = 192.168.1.0/24;'
 }
+
+@test "Ganesha re-reads attributes on every access (no 60 s cache)" {
+    # Home Assistant and the Supervisor change files directly (config edits,
+    # backups); with Ganesha's default 60 s attribute cache, clients saw old
+    # contents, missed new files and listed deleted ones for up to a minute.
+    run --separate-stderr gen default
+    assert_output --regexp 'EXPORT_DEFAULTS'$'\n''\{[^}]*Attr_Expiration_Time = 0;'
+}

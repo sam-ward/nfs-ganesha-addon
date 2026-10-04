@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - Ganesha now logs straight to the app log, so the reason for a startup failure is no longer lost. The app exits with Ganesha's exit code when it stops, so crashes show as errors.
  - `authorized_ips` entries are now checked: an entry that isn't an IP address, subnet, hostname or host pattern, `@netgroup`, `auto` or `*` (for example a typo like `192.168.1.0/33`) stops the app from starting, with the entry named in the log, instead of producing a configuration that could silently match no one. `auto` is recognised in any case.
  - At startup, `auto` now waits up to a minute for Home Assistant's network instead of refusing straight away, and the app supports the Watchdog switch (it checks that NFS answers on port 2049).
+ - Changes made on the Home Assistant side (configuration edits, new backups, files added by other apps) are now visible to NFS clients straight away. Before, clients could see old contents, miss new files and still list deleted ones for up to a minute.
  - Quieter startup: at `WARN` and below, the app hides the ~45 lines NFS-Ganesha prints about log-level changes at every start.
  - Stopping the app now shuts NFS-Ganesha down cleanly, instead of it being force-killed after 10 seconds, including while it is still starting up.
  - Documentation: support links now point to the Home Assistant Community thread (GitHub Discussions isn't enabled), plus small fixes (PR #8).

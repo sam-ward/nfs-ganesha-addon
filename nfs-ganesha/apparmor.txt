@@ -60,11 +60,13 @@ profile nfs_ganesha flags=(attach_disconnected,mediate_deleted) {
     capability dac_read_search,
     capability sys_resource,
     # Serving files as the (squashed) client: per-request groups, and acting
-    # on files owned by other users (write, chmod, chown).
+    # on files owned by other users (write, chmod, chown, and keeping the
+    # setgid bit when chmod-ing a file or folder of another group).
     capability setgid,
     capability dac_override,
     capability fowner,
     capability chown,
+    capability fsetid,
 
     network inet stream,
     network inet dgram,

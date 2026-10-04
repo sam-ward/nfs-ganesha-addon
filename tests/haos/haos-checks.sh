@@ -3,10 +3,11 @@
 # what the Supervisor reports, the add-on's log, AppArmor events in the host
 # kernel log, and NFS from this machine through the VM's forwarded port.
 #
-#   [NFS_EXPORT=/share] haos-checks.sh SLUG [EXPECT_VERSION]
+#   [NFS_EXPORT=/share] [EXPECT_ROOT="backup media share"] haos-checks.sh SLUG [EXPECT_VERSION]
 #
 # NFS_EXPORT (default /config) is the export the NFS checks use; reading
-# configuration.yaml is only checked on /config.
+# configuration.yaml is only checked on /config. EXPECT_ROOT, if set, is the
+# exact listing expected at the NFS pseudo-root.
 # Prints PASS/FAIL per check and exits non-zero if any failed.
 set -uo pipefail
 
@@ -46,7 +47,7 @@ check "log has no Ganesha CRIT/MAJ/FATAL lines" bash -c '! grep -qE ":(CRIT|MAJ|
 check "IO-flusher protection active (no EPERM warning)" bash -c '! grep -q PR_SET_IO_FLUSHER' <<< "$LOG"
 
 # --- AppArmor on HAOS's own kernel and parser ---
-KERNEL=$("$VM" console "journalctl -k --no-pager -o cat | grep 'profile=\"$SLUG' | grep -E 'DENIED|ALLOWED' | grep -v posix_mqueue | tail -20")
+KERNEL=$("$VM" console "journalctl -k -b --no-pager -o cat | grep 'profile=\"$SLUG' | grep -E 'DENIED|ALLOWED' | grep -v posix_mqueue | tail -20")
 if grep -qE 'apparmor="(DENIED|ALLOWED)"' <<< "$KERNEL"; then
     fail "no AppArmor denials for $SLUG in the host kernel log"
     grep -E 'apparmor=' <<< "$KERNEL" | sed 's/^/      /'
@@ -55,13 +56,13 @@ else
 fi
 
 # --- NFS from this machine (the VM sees the client as 10.0.2.2) ---
-NFS=$(docker run --rm --privileged --network host -e "E=${NFS_EXPORT:-/config}" --entrypoint bash nfs-ganesha-addon-toolbox -c '
+NFS=$(docker run --rm --privileged --network host -e "E=${NFS_EXPORT:-/config}" -e "ROOT=${EXPECT_ROOT:-}" --entrypoint bash nfs-ganesha-addon-toolbox -c '
     m=/m; mkdir -p $m; o="port=12049,soft,timeo=50,retrans=2"
     r() { if eval "$2" > /dev/null 2>&1; then echo "PASS  NFS: $1"; else echo "FAIL  NFS: $1"; fi; }
     for v in 4.0 4.1 4.2; do
         if mount -t nfs4 -o "$o,vers=$v" "127.0.0.1:$E" $m; then
             [ "$E" != /config ] || r "vers=$v read configuration.yaml" "test -s $m/configuration.yaml"
-            r "vers=$v write, rename, delete" "head -c 5M /dev/urandom > $m/.nfs-check && mv $m/.nfs-check $m/.nfs-check2 && rm $m/.nfs-check2"
+            r "vers=$v write (checksum), rename, delete" "head -c 5M /dev/urandom > /tmp/blob && cp /tmp/blob $m/.nfs-check && cmp /tmp/blob $m/.nfs-check && mv $m/.nfs-check $m/.nfs-check2 && rm $m/.nfs-check2"
             umount $m
         else echo "FAIL  NFS: vers=$v mount $E"; fi
     done
@@ -74,7 +75,12 @@ NFS=$(docker run --rm --privileged --network host -e "E=${NFS_EXPORT:-/config}" 
     r "chmod and write on another user'\''s file" "chmod 600 $m/.ids/b && echo y >> $m/.ids/b"
     r "symlink and hard link" "ln -s a $m/.ids/sl && ln $m/.ids/a $m/.ids/hl && test \"\$(readlink $m/.ids/sl)\" = a"
     rm -rf $m/.ids; umount $m
-    if mount -t nfs4 -o "$o" 127.0.0.1:/ $m; then echo "INFO  NFS: pseudo-root lists: $(ls $m | tr "\n" " ")"; umount $m; fi')
+    if mount -t nfs4 -o "$o" 127.0.0.1:/ $m; then
+        got=$(ls $m | tr "\n" " " | sed "s/ $//")
+        if [ -z "$ROOT" ]; then echo "INFO  NFS: pseudo-root lists: $got"
+        else r "pseudo-root lists exactly: $ROOT (got: $got)" "[ \"$got\" = \"$ROOT\" ]"; fi
+        umount $m
+    fi')
 echo "$NFS"
 grep -q '^FAIL' <<< "$NFS" && FAILED=1
 

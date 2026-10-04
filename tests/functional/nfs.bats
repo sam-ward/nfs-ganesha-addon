@@ -144,8 +144,10 @@ PY
     # If a future Ganesha no longer needs it, this fails and the capability can go.
     stop_addon
     DROP_CAPS=DAC_READ_SEARCH start_addon "$AUTHORISED"
-    mount_export /config
-    run cat "$MNT/hello.txt"
+    # Ganesha re-reads attributes by handle on every access, so this fails at
+    # the mount already (or, failing that, at the first read).
+    run mount_export /config
+    if [ "$status" -eq 0 ]; then run cat "$MNT/hello.txt"; fi
     assert_failure
     assert_output --partial "Operation not permitted"
     unmount_export
@@ -278,6 +280,9 @@ PY
         stop_addon
         start_addon "{\"authorized_ips\":[\"127.0.0.1\"],\"export_folders\":[\"config\",\"media\"],\"log_level\":\"$lvl\"}" \
             || fail "daemon did not start with log_level=$lvl"
+        # Started is not enough: the level must also have parsed cleanly.
+        run docker logs "$NAME"
+        refute_output --regexp 'Config file .*error|Unknown parameter|Invalid value'
     done
     stop_addon
     start_addon "$AUTHORISED"
@@ -295,6 +300,8 @@ PY
     stop_addon
     start_addon '{"authorized_ips":["127.0.0.1"],"export_folders":["config","media"],"log_level":"EVENT"}'
     run docker logs "$NAME"
+    # Guards the WARN test's refute: the lines it filters must really exist.
+    # (EVENT is Ganesha's built-in default, so only a couple of them appear.)
     assert_output --partial " :LOG :NULL :LOG: "
     stop_addon
     start_addon "$AUTHORISED"
@@ -531,6 +538,114 @@ PY
     start_addon '{"authorized_ips":[" Auto "],"export_folders":["config"]}'
     run docker logs "$NAME"
     assert_output --regexp 'authorized_ips "auto" -> [0-9.]+/[0-9]+ \(primary interface [^ ]+, from routing table\)'
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+# --- Coverage review additions ---
+
+@test "changes made on the HA side are visible to mounted clients" {
+    # The Supervisor writes backups and HA rewrites its config files directly.
+    mount_export /config
+    ls "$MNT" > /dev/null
+    echo "first" > "$WORK/config/hostside.txt"
+    local i
+    for i in $(seq 1 10); do [ -f "$MNT/hostside.txt" ] && break; sleep 0.5; done
+    run cat "$MNT/hostside.txt"; assert_output "first"
+    echo "second, longer" > "$WORK/config/hostside.txt"
+    for i in $(seq 1 10); do [ "$(cat "$MNT/hostside.txt")" = "second, longer" ] && break; sleep 0.5; done
+    run cat "$MNT/hostside.txt"; assert_output "second, longer"
+    rm "$WORK/config/hostside.txt"
+    for i in $(seq 1 10); do [ ! -e "$MNT/hostside.txt" ] && break; sleep 0.5; done
+    run ls "$MNT/hostside.txt"; assert_failure
+}
+
+@test "a lock held by one process makes a second process's lock fail (EAGAIN)" {
+    # SQLite and other databases on a share depend on working locks.
+    mount_export /config
+    python3 - "$MNT/locked.db" <<'PY' &
+import fcntl, sys, time
+f = open(sys.argv[1], "w"); fcntl.lockf(f, fcntl.LOCK_EX); time.sleep(8)
+PY
+    local holder=$!
+    sleep 2
+    run python3 - "$MNT/locked.db" <<'PY'
+import errno, fcntl, sys
+f = open(sys.argv[1], "a")
+try:
+    fcntl.lockf(f, fcntl.LOCK_EX | fcntl.LOCK_NB); print("got the lock")
+except OSError as e:
+    print("EAGAIN" if e.errno in (errno.EAGAIN, errno.EACCES) else e)
+PY
+    wait "$holder"
+    assert_output "EAGAIN"
+    rm -f "$MNT/locked.db"
+}
+
+@test "a large write on a hard mount survives an add-on restart" {
+    mount_export /config hard
+    head -c 200M /dev/urandom > "$BATS_TEST_TMPDIR/big"
+    cp "$BATS_TEST_TMPDIR/big" "$MNT/big" &
+    local writer=$!
+    sleep 1
+    docker restart -t 20 "$NAME" > /dev/null
+    wait "$writer" || fail "the copy failed across the restart"
+    assert_equal "$(sha256sum < "$BATS_TEST_TMPDIR/big")" "$(sha256sum < "$MNT/big")"
+    rm -f "$MNT/big"
+}
+
+@test "setgid, times, FIFOs and sticky folders work on other users' files" {
+    local d="$WORK/config/perm"
+    mkdir -p "$d/sticky"; echo x > "$d/theirs"; echo y > "$d/sticky/theirs"
+    chown -R 1000:1000 "$d"; chmod 1777 "$d/sticky"
+    mount_export /config
+    chmod 2775 "$MNT/perm"
+    run stat -c '%a' "$d"; assert_output 2775
+    echo z > "$MNT/perm/inherits"
+    run stat -c '%g' "$d/inherits"; assert_output 1000
+    touch -d '2020-01-02 03:04:05' "$MNT/perm/theirs"
+    run stat -c '%Y' "$d/theirs"; assert_output "$(date -d '2020-01-02 03:04:05' +%s)"
+    mkfifo "$MNT/perm/fifo"
+    run stat -c '%F' "$d/fifo"; assert_output "fifo"
+    rm "$MNT/perm/sticky/theirs"
+    run ls "$d/sticky/theirs"; assert_failure
+    rm -rf "$MNT/perm"
+}
+
+@test "a filesystem mounted inside a shared folder neither hangs nor crashes" {
+    # HA's network storage mounts shares under /media and /share.
+    stop_addon
+    mkdir -p "$WORK/media/sub"
+    MEDIA_MOUNT="-v $WORK/media:/media --tmpfs /media/sub" start_addon "$AUTHORISED"
+    mount_export /media
+    run timeout 20 ls "$MNT/sub"
+    [ "$status" -ne 124 ] || fail "listing the nested mount hung"
+    echo "INFO: listing /media/sub over NFS gave status $status: $output" >&3
+    run timeout 20 sh -c "echo nested > '$MNT/sub/f' && cat '$MNT/sub/f'"
+    [ "$status" -ne 124 ] || fail "writing into the nested mount hung"
+    echo "INFO: writing into /media/sub over NFS gave status $status: $output" >&3
+    unmount_export
+    run docker inspect -f '{{.State.Running}}' "$NAME"; assert_output true
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+@test "a read-only folder gives EROFS on write and still starts and serves" {
+    # Only /media is exported: FSAL_VFS opens files by handle through the first
+    # mount it registered for a host filesystem, so a read-only bind sharing a
+    # filesystem with an earlier writable export isn't enforced. The add-on
+    # maps every folder read-write, so that can't happen in HA; this covers a
+    # filesystem that is itself read-only.
+    stop_addon
+    echo "readable" > "$WORK/media/ro.txt"
+    MEDIA_MOUNT="-v $WORK/media:/media:ro" start_addon '{"authorized_ips":["127.0.0.1"],"export_folders":["media"]}'
+    mount_export /media
+    run cat "$MNT/ro.txt"; assert_output readable
+    run sh -c "echo x > '$MNT/new'"
+    assert_failure
+    assert_output --partial "Read-only file system"
+    unmount_export
+    rm -f "$WORK/media/ro.txt"
     stop_addon
     start_addon "$AUTHORISED"
 }

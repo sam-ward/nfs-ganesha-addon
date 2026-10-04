@@ -148,6 +148,9 @@ EXPORT_DEFAULTS
     Squash = All_Squash;
     Anonymous_Uid = 0;
     Anonymous_Gid = 0;
+    # Re-read attributes on every access: Home Assistant and the Supervisor
+    # change files directly, and the default 60 s cache hid those changes.
+    Attr_Expiration_Time = 0;
 }
 
 NFS_KRB5

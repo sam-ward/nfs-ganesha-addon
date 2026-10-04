@@ -71,7 +71,11 @@ addon_run_args() {
         [[ " ${DROP_CAPS:-} " == *" $cap "* ]] || printf '%s\n' --cap-add "$cap"
     done
     # Mounted where the Supervisor mounts config.yaml's map entries.
-    printf '%s\n' -v "$WORK/data:/data" -v "$WORK/config:/homeassistant" -v "$WORK/media:/media" \
+    # MEDIA_MOUNT (test-only) replaces /media's bind mount with other docker
+    # run arguments, e.g. a size-limited tmpfs or a read-only bind.
+    local media=(-v "$WORK/media:/media")
+    [ -z "${MEDIA_MOUNT:-}" ] || read -ra media <<< "$MEDIA_MOUNT"
+    printf '%s\n' -v "$WORK/data:/data" -v "$WORK/config:/homeassistant" "${media[@]}" \
         -v "$WORK/local_apps:/local_apps"
     # Test-only: NETWORK_INFO_OVERRIDE replaces the network info "auto" resolves
     # from, AUTO_RESOLVE_TIMEOUT shortens how long it waits for it, and
