@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 ## [Unreleased]
- - **New installs** now default to sharing only `share`, `media` and `backup`, with access limited to Home Assistant's own network (`auto`). **Existing installs keep their settings**; to adopt the new defaults, change the options yourself (see Documentation).
+ - **Breaking: safer defaults.** The app now defaults to sharing only `share`, `media` and `backup`, with access limited to Home Assistant's own network (`auto`). **If you never changed the app's options, these defaults apply when you update:** `config`, `ssl`, `addons`/`local_apps` and `addon_configs`/`app_configs` stop being shared, and clients outside Home Assistant's subnet (VPN, other VLANs) are refused. Add them back in the options if you need them. If you saved your options before, they are kept.
  - New `auto` value for `authorized_ips`: Home Assistant's own network subnet, worked out at each start (from the Supervisor, or the host's routing table). It can be combined with other entries. If it can't be worked out, the app refuses to start rather than guess.
  - Option names and descriptions now appear on the app's Configuration tab.
  - The app now has an icon and logo in Home Assistant. Thanks to @andremmfaria for designing them in PR #2.

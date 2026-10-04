@@ -9,10 +9,10 @@
 
 ## Configuration
 
-> **Defaults for new installs**
+> **Defaults (new in this version)**
 >
-> - New installs share only `share`, `media` and `backup`, and only with clients on Home Assistant's own network (`auto`).
-> - **Existing installs keep their current settings when updating.** Nothing is changed for them. To adopt the new defaults, change the options yourself.
+> - By default the app shares only `share`, `media` and `backup`, and only with clients on Home Assistant's own network (`auto`).
+> - **Updating from an earlier version:** if you ever saved the app's options, your settings are kept. If you never changed them, the new defaults apply after the update, so `config`, `ssl`, `local_apps` and `app_configs` are no longer shared, and clients outside Home Assistant's own subnet (for example over a VPN or from another VLAN) are refused. Add them back in the options if you need them.
 > - To also share `config`, `ssl`, `local_apps` or `app_configs`, add them to `export_folders`. Each one exposes sensitive files:
 >   - `config`: your Home Assistant configuration, including `secrets.yaml`
 >   - `ssl`: certificates and their private keys
@@ -36,7 +36,7 @@ export_folders:
 
 **Required:** Yes  
 **Type:** List of strings  
-**Default (new installs):** `auto`
+**Default:** `auto`
 
 List of IP addresses or CIDR subnets allowed to access your NFS shares, and/or `auto`.
 
@@ -45,7 +45,7 @@ List of IP addresses or CIDR subnets allowed to access your NFS shares, and/or `
 **Examples:**
 
 ```yaml
-# Home Assistant's own network (the default for new installs)
+# Home Assistant's own network (the default)
 authorized_ips:
   - auto
 
@@ -80,7 +80,7 @@ Installs from before this change default to all private network ranges (`10.0.0.
 
 **Required:** Yes  
 **Type:** Multi-select list  
-**Default (new installs):** `share`, `media`, `backup`
+**Default:** `share`, `media`, `backup`
 
 Select which Home Assistant folders to export via NFS.
 
@@ -98,7 +98,7 @@ Select which Home Assistant folders to export via NFS.
 **Examples:**
 
 ```yaml
-# The default for new installs
+# The default
 export_folders:
   - share
   - media
