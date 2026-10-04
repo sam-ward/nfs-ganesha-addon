@@ -13,7 +13,7 @@ profile nfs_ganesha flags=(attach_disconnected,mediate_deleted) {
   /migrate-options.sh rix,
   /usr/bin/bash ix,
   /dev/tty rw,
-  /usr/bin/{cat,cp,grep,head,jq,mkdir,rm,sed,sleep} ix,
+  /usr/bin/{cat,cp,grep,head,jq,mkdir,mkfifo,rm,sed,sleep} ix,
   # Process substitution feeding Ganesha's log filter
   @{PROC}/*/fd/* rw,
   # rm of the stale D-Bus pid file in /run/dbus (owned by messagebus)

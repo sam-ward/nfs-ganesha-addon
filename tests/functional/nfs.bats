@@ -230,23 +230,25 @@ PY
 }
 
 @test "startup failure is visible in the log when port 2049 is taken" {
-    # The reason must reach the add-on log, and the add-on must exit non-zero
-    # so the Supervisor shows it as an error.
+    # The reason must reach the add-on log, before the exit line (the log filter
+    # must not lose Ganesha's last lines), and the add-on must exit non-zero so
+    # the Supervisor shows it as an error. Repeated, because losing the last
+    # lines is a race.
     stop_addon
     python3 -m http.server 2049 --bind 0.0.0.0 >/dev/null 2>&1 &
-    local holder=$!
+    local holder=$! args i
     WORK="$REPO_ROOT/.test-work"
-    local args
     mapfile -t args < <(addon_run_args)
-    docker run -d --name "$NAME" "${args[@]}" "$IMAGE" >/dev/null
-    run timeout 30 docker wait "$NAME"
+    for i in 1 2 3 4 5; do
+        docker run -d --name "$NAME" "${args[@]}" "$IMAGE" >/dev/null
+        run timeout 30 docker wait "$NAME"
+        assert_success
+        refute_output 0
+        run docker logs "$NAME"
+        assert_output --regexp 'Bind_sockets.*FATAL[^$]*'$'\n''(.*'$'\n'')*\[NFS\] Ganesha exited with code [1-9]'
+        docker rm -f "$NAME" >/dev/null
+    done
     kill "$holder"; wait "$holder" 2>/dev/null || true
-    assert_success
-    refute_output 0
-    run docker logs "$NAME"
-    assert_output --regexp '[Aa]ddress already in use|bind'
-    assert_output --partial "Ganesha exited with code"
-    stop_addon
     start_addon "$AUTHORISED"
 }
 
@@ -497,6 +499,27 @@ PY
     mount_export /config
     run cat "$MNT/hello.txt"; assert_output "hello from config"
     unmount_export
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
+@test "a stop during the startup wait is quick and clean" {
+    # run.sh is PID 1: it must handle SIGTERM from the start, not only once
+    # Ganesha is running, or a stop waits for the kill timeout.
+    stop_addon
+    : > "$WORK/data/empty-network.json"
+    echo '{"authorized_ips":["auto"],"export_folders":["config"]}' > "$WORK/data/options.json"
+    local args start
+    mapfile -t args < <(NETWORK_INFO_OVERRIDE=/data/empty-network.json addon_run_args)
+    docker run -d --name "$NAME" "${args[@]}" "$IMAGE" >/dev/null
+    sleep 3
+    start=$(date +%s)
+    docker stop -t 20 "$NAME" >/dev/null
+    (( $(date +%s) - start < 8 )) || fail "stop took $(( $(date +%s) - start ))s"
+    run docker inspect -f '{{.State.ExitCode}}' "$NAME"
+    assert_output 0
+    run docker logs "$NAME"
+    assert_output --partial "Stopped before Ganesha started"
     stop_addon
     start_addon "$AUTHORISED"
 }

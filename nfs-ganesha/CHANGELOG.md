@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - Ganesha now logs straight to the app log, so the reason for a startup failure is no longer lost. The app exits with Ganesha's exit code when it stops, so crashes show as errors.
  - At startup, `auto` now waits up to a minute for Home Assistant's network instead of refusing straight away, and the app supports the Watchdog switch (it checks that NFS answers on port 2049).
  - Quieter startup: at `WARN` and below, the app hides the ~45 lines NFS-Ganesha prints about log-level changes at every start.
- - Stopping the app now shuts NFS-Ganesha down cleanly, instead of it being force-killed after 10 seconds.
+ - Stopping the app now shuts NFS-Ganesha down cleanly, instead of it being force-killed after 10 seconds, including while it is still starting up.
  - Documentation: support links now point to the Home Assistant Community thread (GitHub Discussions isn't enabled), plus small fixes (PR #8).
 
 ## [1.2.1] - 2026-09-30

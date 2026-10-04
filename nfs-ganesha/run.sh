@@ -4,6 +4,22 @@ set -e
 CONFIG_PATH=/data/options.json
 SUPERVISOR_API=${SUPERVISOR_API:-http://supervisor}
 
+# This script is PID 1, which ignores SIGTERM unless it handles it, so handle
+# it from the start: before Ganesha runs, just exit; once it runs, pass the
+# signal on and let the end of the script collect its exit code.
+GANESHA_PID=""
+STOPPING=0
+# shellcheck disable=SC2317  # called by the trap below, not directly
+on_stop() {
+    STOPPING=1
+    if [ -z "$GANESHA_PID" ]; then
+        echo "[NFS] Stopped before Ganesha started"
+        exit 0
+    fi
+    kill -TERM "$GANESHA_PID" 2>/dev/null || true
+}
+trap on_stop TERM INT
+
 echo "[NFS] Starting NFS-Ganesha (Debian Mode)..."
 # Always logged, so a pasted log shows exactly what is running.
 echo "[NFS] App version: ${ADDON_VERSION:-unknown}"
@@ -67,7 +83,7 @@ while :; do
     if [ "$RC" -eq 3 ] && [ "$SECONDS" -lt "$DEADLINE" ]; then
         [ -n "${WAITING:-}" ] || echo "[NFS] Waiting for the network to resolve authorized_ips \"auto\"..."
         WAITING=1
-        sleep 5
+        sleep 5 & wait $!   # interruptible, so a stop isn't delayed
         continue
     fi
     cat /tmp/gen-config.log >&2
@@ -105,14 +121,16 @@ esac
 
 # Log straight to stdout so the HA Logs tab gets it. -N applies the level
 # before the LOG block is parsed, so early startup errors are visible too.
-# Ganesha runs in the background so this script (PID 1) can pass on the
-# Supervisor's stop signal; PID 1 ignores SIGTERM unless it traps it.
-/usr/bin/ganesha.nfsd -F -L STDOUT -N "NIV_${LOG_LEVEL}" -f "$CONF" \
-    > >(if [ -n "$LOG_FILTER" ]; then grep --line-buffered -vF "$LOG_FILTER"; else cat; fi) 2>&1 &
+# Ganesha runs in the background so the stop handler above can signal it.
+# Its output goes through the filter via a FIFO, so the script can wait for
+# the filter to drain: otherwise Ganesha's last lines (often the reason it
+# stopped) could be lost when this script exits.
+LOG_FIFO=/tmp/ganesha-log.fifo
+rm -f "$LOG_FIFO" && mkfifo "$LOG_FIFO"
+if [ -n "$LOG_FILTER" ]; then grep --line-buffered -vF "$LOG_FILTER" < "$LOG_FIFO" || true; else cat < "$LOG_FIFO"; fi &
+FILTER_PID=$!
+/usr/bin/ganesha.nfsd -F -L STDOUT -N "NIV_${LOG_LEVEL}" -f "$CONF" > "$LOG_FIFO" 2>&1 &
 GANESHA_PID=$!
-
-STOPPING=0
-trap 'STOPPING=1; kill -TERM "$GANESHA_PID" 2>/dev/null || true' TERM INT
 
 RC=0
 wait "$GANESHA_PID" || RC=$?
@@ -121,6 +139,7 @@ if [ "$STOPPING" = 1 ]; then
     RC=0
     wait "$GANESHA_PID" || RC=$?
 fi
+wait "$FILTER_PID" || true
 
 echo "[NFS] Ganesha exited with code ${RC}"
 exit "$RC"
