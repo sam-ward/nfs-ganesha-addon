@@ -51,8 +51,14 @@ RUN mkdir -p /var/run/ganesha \
     && mkdir -p /var/run/dbus
 
 # Copy the run script
-COPY run.sh gen-config.sh migrate-options.sh /
-RUN chmod a+x /run.sh /gen-config.sh /migrate-options.sh
+COPY run.sh gen-config.sh migrate-options.sh healthcheck.sh /
+RUN chmod a+x /run.sh /gen-config.sh /migrate-options.sh /healthcheck.sh
+
+# With the Watchdog switch on, the Supervisor restarts the app when it turns
+# unhealthy (NFS stops answering) or stops unexpectedly. The start period
+# covers waiting for the network for authorized_ips "auto".
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --start-interval=5s --retries=3 \
+    CMD ["/healthcheck.sh"]
 
 # Run the script directly (We are not using S6 overlay in this base)
 CMD [ "/run.sh" ]

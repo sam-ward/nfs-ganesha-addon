@@ -649,3 +649,23 @@ PY
     stop_addon
     start_addon "$AUTHORISED"
 }
+
+@test "health: Docker reports the add-on healthy, and a frozen Ganesha fails the check" {
+    # /healthcheck.sh makes an NFS NULL call. A TCP connect alone would still
+    # succeed with Ganesha hung, because the kernel accepts the connection.
+    local i status=""
+    for i in $(seq 1 30); do
+        status=$(docker inspect -f '{{.State.Health.Status}}' "$NAME")
+        [ "$status" = healthy ] && break; sleep 1
+    done
+    assert_equal "$status" healthy
+    # docker exec runs under the add-on's AppArmor profile, as health checks do.
+    run docker exec "$NAME" /healthcheck.sh
+    assert_success
+    kill -STOP "$(ganesha_pid)"
+    run docker exec "$NAME" /healthcheck.sh
+    kill -CONT "$(ganesha_pid)"
+    assert_failure
+    run docker exec "$NAME" /healthcheck.sh
+    assert_success
+}

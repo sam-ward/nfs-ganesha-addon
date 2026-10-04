@@ -340,9 +340,13 @@ exports() { awk -F'"' '/^    Path = /{p=$2} /^    Pseudo = /{print p " -> " $2}'
     assert_equal "$status" 1
 }
 
-@test "config.yaml asks the Supervisor's watchdog to check the NFS port" {
+@test "health: a Docker HEALTHCHECK runs /healthcheck.sh (watchdog: is obsolete)" {
+    # The HA app linter rejects config.yaml's watchdog URL; the Supervisor's
+    # watchdog acts on the container's health instead.
     run python3 -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1])).get("watchdog"))' "$CONFIG_YAML"
-    assert_output "tcp://[HOST]:2049"
+    assert_output "None"
+    run grep -A1 '^HEALTHCHECK' "$BATS_TEST_DIRNAME/../../nfs-ganesha/Dockerfile"
+    assert_output --partial "/healthcheck.sh"
 }
 
 # --- authorized_ips validation ---

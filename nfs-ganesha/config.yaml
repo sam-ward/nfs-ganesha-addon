@@ -22,9 +22,6 @@ map:
 host_network: true
 # Read-only access to /network/info, to resolve authorized_ips "auto".
 hassio_api: true
-# With the Watchdog switch on, the Supervisor restarts the app if NFS stops
-# answering (and, regardless of this, if the app stops unexpectedly).
-watchdog: tcp://[HOST]:2049
 privileged:
   - DAC_READ_SEARCH
   - SYS_RESOURCE

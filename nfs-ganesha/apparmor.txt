@@ -14,6 +14,9 @@ profile nfs_ganesha flags=(attach_disconnected,mediate_deleted) {
   /usr/bin/bash ix,
   /dev/tty rw,
   /usr/bin/{cat,cp,grep,head,jq,mkdir,mkfifo,rm,sed,sleep} ix,
+  # Docker HEALTHCHECK (an NFS NULL call to 127.0.0.1:2049)
+  /healthcheck.sh rix,
+  /usr/bin/{od,timeout,tr} ix,
   # Process substitution feeding Ganesha's log filter
   @{PROC}/*/fd/* rw,
   # rm of the stale D-Bus pid file in /run/dbus (owned by messagebus)
@@ -22,6 +25,8 @@ profile nfs_ganesha flags=(attach_disconnected,mediate_deleted) {
   # Supervisor API (option migration, authorized_ips "auto") and routing table
   /usr/bin/curl ix,
   /usr/{,s}bin/ip ix,
+  /usr/share/iproute2/{,**} r,
+  /etc/iproute2/{,**} r,
   network inet stream,
   network netlink raw,
 
