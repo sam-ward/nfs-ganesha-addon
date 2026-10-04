@@ -61,12 +61,21 @@ start() {
     echo "VM started (serial console: $STATE/serial.log)"
 }
 
+# True once Home Assistant Core answers: /api/ needs auth (401, or 200), and
+# /api/onboarding gives its steps (200) or, once onboarded, 404. During first
+# boot the landing page and a restarting Core can briefly answer /api/ alone.
+ha_ready() {
+    [[ "$(tool curl -s -o /dev/null -w '%{http_code}' "$HA/api/" 2>/dev/null)" =~ ^(200|401)$ ]] \
+        && [[ "$(tool curl -s -o /dev/null -w '%{http_code}' "$HA/api/onboarding" 2>/dev/null)" =~ ^(200|404)$ ]]
+}
+
 wait_ha() {
+    local ok=0
     echo -n "Waiting for Home Assistant"
-    # Until Core is installed, a landing page answers every path with a
-    # redirect. Core's API answers /api/ with 401 (or 200), onboarded or not.
-    until [[ "$(tool curl -s -o /dev/null -w '%{http_code}' "$HA/api/" 2>/dev/null)" =~ ^(200|401)$ ]]; do
-        echo -n .; sleep 10
+    # Three good answers in a row, 5 s apart.
+    while (( ok < 3 )); do
+        if ha_ready; then ok=$((ok + 1)); else ok=0; echo -n .; fi
+        sleep 5
     done
     echo " up"
 }
