@@ -160,14 +160,7 @@ sudo mount -t nfs -o nfsvers=4 <HA_IP>:/config /Volumes/ha-config
 
 ### Windows
 
-1. Enable NFS Client:
-   - Settings → Apps → Optional Features → Add a feature
-   - Search for "NFS" and install "Services for NFS"
-
-2. Mount the share:
-```cmd
-mount -o anon \\<HA_IP>\config Z:
-```
+Windows' built-in NFS client only supports NFSv3, and this app is NFSv4-only. Use the official Samba share app instead (recommended), or a third-party NFSv4 client.
 
 ## Troubleshooting
 

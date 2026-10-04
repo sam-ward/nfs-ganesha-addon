@@ -211,34 +211,10 @@ sudo umount /Volumes/homeassistant
 
 ### Windows
 
-#### Prerequisites
+Windows' built-in NFS client ("Services for NFS") only supports NFSv3, and this app is NFSv4-only, so it can't connect. Either:
 
-Enable NFS Client:
-1. Open Settings → Apps → Optional Features
-2. Click "Add a feature"
-3. Search for "Services for NFS"
-4. Install "Services for NFS" (requires reboot)
-
-Or via PowerShell (as Administrator):
-```powershell
-Enable-WindowsOptionalFeature -Online -FeatureName ServicesForNFS-ClientOnly
-```
-
-#### Mount the Share
-
-```cmd
-# Map as network drive
-mount -o anon \\<HA_IP>\config Z:
-
-# Access the drive
-Z:
-dir
-
-# Unmount
-umount Z:
-```
-
-**Note:** Windows uses backslashes and converts the NFS path format automatically.
+- **Use the official Samba share app (recommended).** It shares the same Home Assistant folders over SMB, which Windows supports natively.
+- **Use a third-party NFSv4 client for Windows.**
 
 ## Troubleshooting
 
