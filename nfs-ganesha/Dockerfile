@@ -3,7 +3,7 @@
 # byte past NFS owner/group strings, which breaks numeric group changes, so
 # this stage rebuilds Debian's own source package with the upstream fix in
 # patches/. Drop it once trixie-backports ships the fix.
-FROM debian:trixie-slim AS ganesha
+FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a AS ganesha
 ARG GANESHA_VERSION=9.14-1~bpo13+1
 RUN printf '%s\n' 'deb http://deb.debian.org/debian trixie-backports main' \
         'deb-src http://deb.debian.org/debian trixie main' \
@@ -26,7 +26,7 @@ RUN for p in debian/patches/addon/*.patch; do echo "addon/${p##*/}" >> debian/pa
         tail -50 /build/build.log; exit 1; \
     fi
 
-FROM debian:trixie-slim
+FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
 
 # Install Ganesha (the packages built above; libntirpc from trixie-backports),
 # utils, and dependencies. Everything else is trixie.
