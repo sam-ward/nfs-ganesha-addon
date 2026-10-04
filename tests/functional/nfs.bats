@@ -341,7 +341,8 @@ host_primary_ip() {
 @test "security: auto refuses to start when the network can't be determined" {
     stop_addon
     : > "$WORK/data/empty-network.json"
-    NETWORK_INFO_OVERRIDE=/data/empty-network.json run start_addon '{"authorized_ips":["auto"],"export_folders":["config"]}'
+    NETWORK_INFO_OVERRIDE=/data/empty-network.json AUTO_RESOLVE_TIMEOUT=3 \
+        run start_addon '{"authorized_ips":["auto"],"export_folders":["config"]}'
     assert_failure
     run docker logs "$NAME"
     assert_output --partial 'authorized_ips "auto" could not be resolved'
@@ -481,4 +482,21 @@ PY
         | grep "profile=\"$AA_PROFILE" | grep -E 'apparmor="(DENIED|ALLOWED)"' \
         | grep -v 'class="posix_mqueue"' || true)  # see the mqueue note in apparmor.txt
     [ -z "$events" ] || fail "AppArmor events for $AA_PROFILE:"$'\n'"$events"
+}
+
+@test "auto: waits for the network at startup instead of refusing at once" {
+    # At boot the add-on can start before HA's network is up.
+    stop_addon
+    : > "$WORK/data/late-network.json"
+    ( sleep 6; echo '{"source":"test","interfaces":[{"interface":"lo","connected":true,"primary":true,"ipv4":{"address":["127.0.0.1/8"]}}]}' \
+        > "$WORK/data/late-network.json" ) &
+    NETWORK_INFO_OVERRIDE=/data/late-network.json start_addon '{"authorized_ips":["auto"],"export_folders":["config"]}'
+    run docker logs "$NAME"
+    assert_output --partial 'Waiting for the network'
+    assert_output --partial 'authorized_ips "auto" -> 127.0.0.0/8'
+    mount_export /config
+    run cat "$MNT/hello.txt"; assert_output "hello from config"
+    unmount_export
+    stop_addon
+    start_addon "$AUTHORISED"
 }

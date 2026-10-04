@@ -63,7 +63,7 @@ export_folders:
 
 List of IP addresses or CIDR subnets allowed to access the NFS shares, and/or `auto`.
 
-`auto` is replaced at each start by the subnet of Home Assistant's primary network interface (from Settings → System → Network), for example `192.168.1.0/24`. If the app can't work it out, it refuses to start and logs why, rather than guessing. Clients on other subnets, VPNs or VLANs need their own entries.
+`auto` is replaced at each start by the subnet of Home Assistant's primary network interface (from Settings → System → Network), for example `192.168.1.0/24`. If it can't work it out yet (for example while Home Assistant is still starting its network), the app waits for up to a minute; if it still can't, it refuses to start and logs why, rather than guessing. Clients on other subnets, VPNs or VLANs need their own entries.
 
 **Default:** `auto`
 ```yaml

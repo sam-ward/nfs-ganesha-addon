@@ -331,3 +331,16 @@ exports() { awk -F'"' '/^    Path = /{p=$2} /^    Pseudo = /{print p " -> " $2}'
     run python3 -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))["schema"]["export_folders"][0])' "$CONFIG_YAML"
     assert_output "list(config|ssl|local_apps|app_configs|backup|share|media|addons|addon_configs)"
 }
+
+@test "auto that can't be resolved exits with status 3, which run.sh retries" {
+    run --separate-stderr gen_json "$AUTO" no-ipv4
+    assert_equal "$status" 3
+    # A real configuration error is not retried: it keeps status 1.
+    run --separate-stderr gen_json '{"authorized_ips":[],"export_folders":["config"]}'
+    assert_equal "$status" 1
+}
+
+@test "config.yaml asks the Supervisor's watchdog to check the NFS port" {
+    run python3 -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1])).get("watchdog"))' "$CONFIG_YAML"
+    assert_output "tcp://[HOST]:2049"
+}

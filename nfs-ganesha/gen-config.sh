@@ -47,7 +47,7 @@ for entry in "${IP_ENTRIES[@]}"; do
     if [ "$entry" = auto ]; then
         if ! resolve_auto; then
             echo "[ERROR] authorized_ips \"auto\" could not be resolved (no connected primary network with an IPv4 address); set your subnet explicitly, e.g. 192.168.1.0/24. Refusing to start." >&2
-            exit 1
+            exit 3  # run.sh retries this one while the network comes up
         fi
         echo "[NFS] authorized_ips \"auto\" -> ${AUTO_NET} (primary interface ${AUTO_IFACE}, from ${AUTO_SOURCE})" >&2
         entry=$AUTO_NET

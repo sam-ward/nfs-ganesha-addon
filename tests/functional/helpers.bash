@@ -74,9 +74,10 @@ addon_run_args() {
     printf '%s\n' -v "$WORK/data:/data" -v "$WORK/config:/homeassistant" -v "$WORK/media:/media" \
         -v "$WORK/local_apps:/local_apps"
     # Test-only: NETWORK_INFO_OVERRIDE replaces the network info "auto" resolves
-    # from; SUPERVISOR_API/SUPERVISOR_TOKEN point the add-on at a mock Supervisor.
+    # from, AUTO_RESOLVE_TIMEOUT shortens how long it waits for it, and
+    # SUPERVISOR_API/SUPERVISOR_TOKEN point the add-on at a mock Supervisor.
     local var
-    for var in NETWORK_INFO_OVERRIDE SUPERVISOR_API SUPERVISOR_TOKEN; do
+    for var in NETWORK_INFO_OVERRIDE AUTO_RESOLVE_TIMEOUT SUPERVISOR_API SUPERVISOR_TOKEN; do
         [ -z "${!var:-}" ] || printf '%s\n' -e "$var=${!var}"
     done
 }

@@ -33,8 +33,9 @@ fi
 # 2. Network info for authorized_ips "auto": the Supervisor's view of HA's
 # network, or else the host routing table (we run on the host network).
 NETWORK_INFO=/tmp/network-info.json
-: > "$NETWORK_INFO"
-if jq --exit-status '.authorized_ips | index("auto")' "$CONFIG_PATH" > /dev/null 2>&1; then
+gather_network_info() {
+    : > "$NETWORK_INFO"
+    jq --exit-status '.authorized_ips | index("auto")' "$CONFIG_PATH" > /dev/null 2>&1 || return 0
     if [ -n "${NETWORK_INFO_OVERRIDE:-}" ]; then
         cp "$NETWORK_INFO_OVERRIDE" "$NETWORK_INFO"   # tests only
     elif [ -n "${SUPERVISOR_TOKEN:-}" ] && RESPONSE=$(curl -fsS --max-time 5 \
@@ -50,12 +51,29 @@ if jq --exit-status '.authorized_ips | index("auto")' "$CONFIG_PATH" > /dev/null
                 || : > "$NETWORK_INFO"
         fi
     fi
-fi
+}
 
-# 3. Build Ganesha Configuration (logs IPs, folders and exports to stderr)
+# 3. Build Ganesha Configuration (logs IPs, folders and exports to stderr).
+# At boot the app can start before HA's network is up, so if "auto" can't be
+# resolved yet (gen-config.sh exits 3), keep trying for a while. The
+# generator's messages are shown once, from the last attempt.
 CONF="/etc/ganesha/ganesha.conf"
 mkdir -p /etc/ganesha
-/gen-config.sh "$CONFIG_PATH" / "$NETWORK_INFO" > "$CONF"
+DEADLINE=$((SECONDS + ${AUTO_RESOLVE_TIMEOUT:-60}))
+while :; do
+    gather_network_info
+    RC=0
+    /gen-config.sh "$CONFIG_PATH" / "$NETWORK_INFO" > "$CONF" 2> /tmp/gen-config.log || RC=$?
+    if [ "$RC" -eq 3 ] && [ "$SECONDS" -lt "$DEADLINE" ]; then
+        [ -n "${WAITING:-}" ] || echo "[NFS] Waiting for the network to resolve authorized_ips \"auto\"..."
+        WAITING=1
+        sleep 5
+        continue
+    fi
+    cat /tmp/gen-config.log >&2
+    [ "$RC" -eq 0 ] || exit "$RC"
+    break
+done
 
 # 4. Start DBUS
 echo "[NFS] Starting D-Bus..."
