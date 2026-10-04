@@ -63,8 +63,9 @@ start() {
 
 wait_ha() {
     echo -n "Waiting for Home Assistant"
-    # Until Core is installed, a landing page answers every path with a redirect.
-    until tool sh -c "curl -fsS '$HA/api/onboarding' | jq -e 'type == \"array\"'" > /dev/null 2>&1; do
+    # Until Core is installed, a landing page answers every path with a
+    # redirect. Core's API answers /api/ with 401 (or 200), onboarded or not.
+    until [[ "$(tool curl -s -o /dev/null -w '%{http_code}' "$HA/api/" 2>/dev/null)" =~ ^(200|401)$ ]]; do
         echo -n .; sleep 10
     done
     echo " up"
