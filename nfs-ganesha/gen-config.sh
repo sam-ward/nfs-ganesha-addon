@@ -136,6 +136,14 @@ declare -A FOLDER_PATH=(
     [app_configs]=/app_configs [backup]=/backup [share]=/share [media]=/media
 )
 declare -A LEGACY_PSEUDO=([local_apps]=/addons [app_configs]=/addon_configs)
+# Fixed export ids: clients' file handles include them, so a folder's id must
+# not change when other folders are added or removed. 10-16 follow 1.2.x's
+# default order, so installs updated from it keep their ids.
+declare -A FOLDER_ID=(
+    [config]=10 [ssl]=11 [local_apps]=12 [app_configs]=13
+    [backup]=14 [share]=15 [media]=16
+)
+declare -A LEGACY_ID=([local_apps]=17 [app_configs]=18)
 
 export_block() {  # <id> <path> <pseudo>
     cat <<EOF
@@ -157,7 +165,6 @@ EXPORT
 EOF
 }
 
-ID=10
 EXPORTED=" "
 ALIASES=()
 
@@ -180,8 +187,7 @@ while IFS= read -r FOLDER; do
 
     if [ -d "${ROOT%/}$DIR" ]; then
         echo "[NFS] Exporting: /$FOLDER" >&2
-        export_block "$ID" "$DIR" "/$FOLDER"
-        ID=$((ID+1))
+        export_block "${FOLDER_ID[$FOLDER]}" "$DIR" "/$FOLDER"
         EXPORTED+="$FOLDER "
         [ -z "${LEGACY_PSEUDO[$FOLDER]:-}" ] || ALIASES+=("$FOLDER")
     else
@@ -189,15 +195,12 @@ while IFS= read -r FOLDER; do
     fi
 done <<< "$EXPORT_FOLDERS"
 
-# Legacy aliases go last, so the primary exports keep their ids (clients'
-# file handles include the export id).
 for FOLDER in "${ALIASES[@]}"; do
     echo "[NFS] Also exporting: ${LEGACY_PSEUDO[$FOLDER]} (${LEGACY_PSEUDO[$FOLDER]} is a legacy path for /$FOLDER; switch clients to /$FOLDER)" >&2
-    export_block "$ID" "${FOLDER_PATH[$FOLDER]}" "${LEGACY_PSEUDO[$FOLDER]}"
-    ID=$((ID+1))
+    export_block "${LEGACY_ID[$FOLDER]}" "${FOLDER_PATH[$FOLDER]}" "${LEGACY_PSEUDO[$FOLDER]}"
 done
 
-if [ "$ID" -eq 10 ]; then
+if [ "$EXPORTED" = " " ]; then
     echo "[ERROR] No export folders to share; select at least one in export_folders. Refusing to start." >&2
     exit 1
 fi

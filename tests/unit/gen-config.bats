@@ -15,7 +15,7 @@ setup() {
 
 gen() { bash "$GEN" "$BATS_TEST_DIRNAME/fixtures/$1.json" "$ROOT"; }
 
-@test "golden: output matches pre-refactor run.sh for every fixture" {
+@test "golden: output matches the reviewed snapshot for every fixture" {
     for f in "$BATS_TEST_DIRNAME"/fixtures/*.json; do
         n=$(basename "$f" .json)
         run --separate-stderr gen "$n"
@@ -150,9 +150,27 @@ gen_json() {
     [[ "$stderr" == *"authorized_ips"* ]]
 }
 
-@test "export ids are unique and sequential from 10" {
-    run --separate-stderr gen default
-    assert_equal "$(grep -o 'Export_Id = [0-9]*' <<< "$output" | awk '{print $3}' | tr '\n' ' ')" "10 11 12 13 14 15 16 17 18 "
+@test "each folder keeps a fixed export id, whatever else is selected" {
+    # Clients' file handles include the export id: if a folder's id changed
+    # when another folder was added or removed, its mounts would go stale.
+    # The ids follow 1.2.x's default order, so default installs keep theirs.
+    local -A want=([config]=10 [ssl]=11 [local_apps]=12 [app_configs]=13
+                   [backup]=14 [share]=15 [media]=16)
+    local sel f
+    for sel in "config" "media" "share,media,backup" "media,config" "backup,share" \
+               "config,ssl,local_apps,app_configs,backup,share,media" "app_configs,ssl"; do
+        run --separate-stderr gen_json "{\"authorized_ips\":[\"192.168.1.0/24\"],\"export_folders\":[\"${sel//,/\",\"}\"]}"
+        for f in ${sel//,/ }; do
+            assert_output --regexp "Export_Id = ${want[$f]};[^}]*Pseudo = \"/$f\""
+        done
+    done
+}
+
+@test "legacy aliases have fixed export ids too (/addons 17, /addon_configs 18)" {
+    run --separate-stderr gen_json '{"authorized_ips":["192.168.1.0/24"],"export_folders":["app_configs"]}'
+    assert_output --regexp 'Export_Id = 18;[^}]*Pseudo = "/addon_configs"'
+    run --separate-stderr gen_json '{"authorized_ips":["192.168.1.0/24"],"export_folders":["share","addons"]}'
+    assert_output --regexp 'Export_Id = 17;[^}]*Pseudo = "/addons"'
 }
 
 
@@ -264,13 +282,6 @@ exports() { awk -F'"' '/^    Path = /{p=$2} /^    Pseudo = /{print p " -> " $2}'
 @test "folders: a folder listed under both names is exported once" {
     run --separate-stderr gen_json '{"authorized_ips":["192.168.1.0/24"],"export_folders":["addons","local_apps"]}'
     assert_equal "$(exports)" "$(printf '%s\n' '/local_apps -> /local_apps' '/local_apps -> /addons')"
-}
-
-@test "folders: aliases come after the primary exports, so primary export ids don't move" {
-    run --separate-stderr gen_json '{"authorized_ips":["192.168.1.0/24"],"export_folders":["local_apps","share"]}'
-    assert_output --regexp 'Export_Id = 10;[^}]*Pseudo = "/local_apps"'
-    assert_output --regexp 'Export_Id = 11;[^}]*Pseudo = "/share"'
-    assert_output --regexp 'Export_Id = 12;[^}]*Pseudo = "/addons"'
 }
 
 @test "config.yaml maps folders with the current Supervisor names" {
