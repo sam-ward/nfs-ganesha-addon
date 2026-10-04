@@ -26,8 +26,8 @@ ifneq ($(IN_TOOLBOX),1)
 endif
 
 lint: toolbox
-	$(RUN) shellcheck nfs-ganesha/*.sh $(wildcard scripts/*.sh tests/functional/*.bash)
-	$(RUN) hadolint --config .hadolint.yaml nfs-ganesha/Dockerfile tests/toolbox/Dockerfile
+	$(RUN) shellcheck nfs-ganesha/*.sh $(wildcard scripts/*.sh tests/functional/*.bash tests/haos/*.sh)
+	$(RUN) hadolint --config .hadolint.yaml nfs-ganesha/Dockerfile tests/toolbox/Dockerfile tests/haos/Dockerfile
 	$(RUN) yamllint .
 	$(RUN) scripts/check-version.sh
 

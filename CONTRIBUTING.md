@@ -32,12 +32,31 @@ Open an issue with:
 
 ## Testing
 
-Before submitting a PR:
-1. Test the app builds successfully
-2. Test on at least one architecture
-3. Verify all configuration options work
-4. Check logs for errors
-5. Test mounting from at least one client type (Linux/macOS/Windows)
+- `make test` runs everything CI runs: lint, unit tests of the generated
+  ganesha.conf, and functional NFSv4 mount tests under the app's AppArmor
+  profile. Only Docker and make are needed on the host (the tools run in the
+  tests/toolbox image); port 2049 must be free, and the host's kernel must
+  have AppArmor enabled.
+- CI runs the same targets on every PR (amd64 and aarch64).
+- Before a release, the maintainer runs `tests/MANUAL-HAOS-CHECKLIST.md` on a
+  Home Assistant OS VM (`tests/haos/haos-vm.sh`, which needs `/dev/kvm`).
+
+### Browsing the test VM's shares from your desktop
+
+The VM's NFS port is forwarded to `127.0.0.1:12049`, and the VM sees your
+desktop as `10.0.2.2`, which `authorized_ips: auto` allows. With the add-on
+running and an NFS client installed (`nfs-common` on Debian/Ubuntu):
+
+```bash
+sudo mkdir -p /mnt/haos-nfs
+sudo mount -t nfs4 -o port=12049 127.0.0.1:/ /mnt/haos-nfs   # or 127.0.0.1:/share
+ls /mnt/haos-nfs
+sudo umount /mnt/haos-nfs    # before stopping the VM, or the mount hangs
+```
+
+File managers' "Connect to Server" (`nfs://`) doesn't work: GNOME's NFS
+support (libnfs 5) only speaks NFSv3, and the add-on is NFSv4-only. The port
+is bound to `127.0.0.1`, so other machines can't reach the VM.
 
 ## Documentation
 

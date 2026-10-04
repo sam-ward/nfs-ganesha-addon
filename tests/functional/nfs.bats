@@ -413,6 +413,10 @@ host_primary_ip() {
 # answers GET /addons/self/info with $2 as the stored options and writes the
 # body of POST /addons/self/options to $BATS_TEST_TMPDIR/posted.json.
 mock_supervisor() {
+    # Otherwise the readiness wait below would accept whatever holds the port.
+    if bash -c "exec 3<>/dev/tcp/127.0.0.1/$1" 2>/dev/null; then
+        fail "port $1 is already in use; the mock Supervisor needs it"
+    fi
     python3 - "$1" "$2" "$BATS_TEST_TMPDIR/posted.json" <<'PY' &
 import http.server, json, sys
 port, options, out = int(sys.argv[1]), json.loads(sys.argv[2]), sys.argv[3]
@@ -436,9 +440,9 @@ PY
 
 @test "migrate: saved legacy folder names are rewritten via the Supervisor API" {
     local stored='{"authorized_ips":["127.0.0.1"],"export_folders":["addons","config"],"log_level":"WARN"}'
-    mock_supervisor 18080 "$stored"
+    mock_supervisor 18631 "$stored"
     stop_addon
-    SUPERVISOR_API=http://127.0.0.1:18080 SUPERVISOR_TOKEN=test start_addon "$stored"
+    SUPERVISOR_API=http://127.0.0.1:18631 SUPERVISOR_TOKEN=test start_addon "$stored"
     kill "$MOCK_PID"; wait "$MOCK_PID" 2>/dev/null || true
     run cat "$BATS_TEST_TMPDIR/posted.json"
     assert_output '{"options":{"authorized_ips":["127.0.0.1"],"export_folders":["local_apps","config"],"log_level":"WARN"}}'
@@ -450,7 +454,7 @@ PY
 
 @test "migrate: an unreachable Supervisor only logs a warning" {
     stop_addon
-    SUPERVISOR_API=http://127.0.0.1:18081 SUPERVISOR_TOKEN=test \
+    SUPERVISOR_API=http://127.0.0.1:18632 SUPERVISOR_TOKEN=test \
         start_addon '{"authorized_ips":["127.0.0.1"],"export_folders":["addons"]}'
     run docker logs "$NAME"
     assert_output --partial "Could not migrate export_folders"
