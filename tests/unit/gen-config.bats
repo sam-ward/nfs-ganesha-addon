@@ -312,3 +312,11 @@ exports() { awk -F'"' '/^    Path = /{p=$2} /^    Pseudo = /{print p " -> " $2}'
     run apparmor_parser --skip-kernel-load --quiet "$BATS_TEST_DIRNAME/../../nfs-ganesha/apparmor.txt"
     assert_success
 }
+
+@test "config.yaml offers export_folders as a fixed list (a picker), current names first" {
+    # A list(...) schema renders as a multi-select in the HA UI; match(...) is
+    # free text. The legacy names stay last so saved options from 1.2.x still
+    # validate until the add-on migrates them.
+    run python3 -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))["schema"]["export_folders"][0])' "$CONFIG_YAML"
+    assert_output "list(config|ssl|local_apps|app_configs|backup|share|media|addons|addon_configs)"
+}

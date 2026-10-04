@@ -37,5 +37,5 @@ schema:
   authorized_ips:
     - str
   export_folders:
-    - match(config|ssl|local_apps|app_configs|addons|addon_configs|backup|share|media)
+    - list(config|ssl|local_apps|app_configs|backup|share|media|addons|addon_configs)
   log_level: list(NULL|FATAL|MAJ|CRIT|WARN|EVENT|INFO|DEBUG|MID_DEBUG|FULL_DEBUG)?

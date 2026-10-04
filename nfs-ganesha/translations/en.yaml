@@ -11,8 +11,8 @@ configuration:
     description: >-
       Home Assistant folders to share over NFS. config, ssl, local_apps and
       app_configs can contain secrets and private keys; share them only
-      if you need to. (local_apps and app_configs were called addons and
-      addon_configs.)
+      if you need to. (local_apps and app_configs were previously called
+      addons and addon_configs and point to the same locations.)
   log_level:
     name: Log level
     description: >-
