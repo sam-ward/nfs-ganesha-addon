@@ -38,7 +38,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - id: filter
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             addon:
@@ -68,7 +68,7 @@ jobs:
         run: "! ss -tln | grep -E ':2049\\b'"
       - run: make functional
       - if: failure()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: addon-log-${{ matrix.arch }}
           path: .test-logs/addon.log
