@@ -32,7 +32,7 @@ CLIENT_ID="$HA/"
 # Runs a command in the tools image, as the invoking user, on the host network.
 tool() {
     docker run --rm -i --network host --user "$(id -u):$(id -g)" \
-        -v "$STATE:/vm" -v "$REPO:/repo:ro" -w /vm -e HOME=/vm "$IMAGE" "$@"
+        -v "$STATE:/vm" -v "$REPO:/repo:ro" -w /vm -e HOME=/vm -e WAIT "$IMAGE" "$@"
 }
 
 start() {
