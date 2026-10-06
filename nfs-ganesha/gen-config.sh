@@ -41,7 +41,7 @@ resolve_auto() {
 # pattern (with * or ?), or a hostname. Anything else could be a typo that
 # silently matches no one, or break ganesha.conf.
 valid_client() {
-    local e=$1 o
+    local e=$1
     [ "$e" = "*" ] && return 0
     [[ "$e" =~ ^@[A-Za-z0-9._-]+$ ]] && return 0
     if [[ "$e" == *[*?]* ]]; then
@@ -49,14 +49,15 @@ valid_client() {
         [[ "$e" =~ ^[][A-Za-z0-9.*?-]+$ ]]
         return
     fi
-    if [[ "$e" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)(/([0-9]+))?$ ]]; then
-        for o in 1 2 3 4; do (( BASH_REMATCH[o] <= 255 )) || return 1; done
-        [ -z "${BASH_REMATCH[5]}" ] || (( BASH_REMATCH[6] <= 32 ))
-        return
-    fi
+    # IPv4 address or subnet, strict dotted decimal: four octets 0-255 without
+    # leading zeros (lenient parsers read "010" as 8), prefix 0-32. Anything
+    # else of digits, dots and slashes is a malformed IPv4 entry.
+    local octet='(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])'
+    [[ "$e" =~ ^$octet(\.$octet){3}(/(3[0-2]|[12]?[0-9]))?$ ]] && return 0
+    [[ "$e" =~ ^[0-9./]+$ ]] && return 1
+    # IPv6 address or subnet: iproute2's parser decides (it's strict for IPv6).
     if [[ "$e" == *:* ]]; then
-        [[ "$e" =~ ^[0-9A-Fa-f:.]+(/([0-9]+))?$ ]] || return 1
-        [ -z "${BASH_REMATCH[1]}" ] || (( BASH_REMATCH[2] <= 128 ))
+        ip route show to "$e" > /dev/null 2>&1
         return
     fi
     # A hostname: dot-separated labels of letters, digits and inner hyphens,

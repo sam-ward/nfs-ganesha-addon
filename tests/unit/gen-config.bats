@@ -353,19 +353,24 @@ exports() { awk -F'"' '/^    Path = /{p=$2} /^    Pseudo = /{print p " -> " $2}'
 
 @test "security: malformed authorized_ips entries refuse to start, naming the entry" {
     local bad
-    for bad in "192.168.1.0/33" "192.168.1.300" "a b" "a,b" "10.0.0.1;" "}" "fe80::/129" "10.0.0.0/" "-host"; do
+    # Includes forms a lenient parser accepts: leading zeros (octal in bash,
+    # and "010" is 8 to inet_aton), short IPv4, huge prefixes, malformed IPv6.
+    for bad in "192.168.1.0/33" "192.168.1.300" "a b" "a,b" "10.0.0.1;" "}" "fe80::/129" "10.0.0.0/" "-host" \
+               "192.168.1.0/033" "192.168.1.08" "192.168.010.5" "1.2.3" "1.2.3.4/18446744073709551615" \
+               "::::" "fe80:::1" "1:2:3:4:5:6:7:8:9" "fd00::/048" "2001:db8::g"; do
         run --separate-stderr gen_json "{\"authorized_ips\":[\"$bad\"],\"export_folders\":[\"config\"]}"
         assert_failure
         [[ "$stderr" == *"authorized_ips entry \"$bad\" is not"* ]] || fail "no clear error for '$bad': $stderr"
+        [[ "$stderr" != *"value too great"* ]] || fail "bash arithmetic error for '$bad': $stderr"
         refute_output --partial "Clients ="
     done
 }
 
 @test "valid authorized_ips forms are accepted as written" {
     # Every form Ganesha documents for Clients, so configs saved by 1.2.x keep working.
-    run --separate-stderr gen_json '{"authorized_ips":["192.168.1.5","10.0.0.0/8","fe80::/10","2001:db8::1","nas.local","*","@lan","*.lan","192.168.1.*","pc-[12]?"],"export_folders":["config"]}'
+    run --separate-stderr gen_json '{"authorized_ips":["192.168.1.5","10.0.0.0/8","fe80::/10","2001:db8::1","::1","0.0.0.0/0","nas.local","*","@lan","*.lan","192.168.1.*","pc-[12]?"],"export_folders":["config"]}'
     assert_success
-    assert_output --partial 'Clients = 192.168.1.5,10.0.0.0/8,fe80::/10,2001:db8::1,nas.local,*,@lan,*.lan,192.168.1.*,pc-[12]?;'
+    assert_output --partial 'Clients = 192.168.1.5,10.0.0.0/8,fe80::/10,2001:db8::1,::1,0.0.0.0/0,nas.local,*,@lan,*.lan,192.168.1.*,pc-[12]?;'
 }
 
 @test "auto is recognised regardless of case and surrounding spaces" {
