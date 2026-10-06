@@ -4,10 +4,11 @@ name: Publish images
 # against that exact image, and pushes it to GHCR, where the Supervisor
 # pulls it from (config.yaml's image:).
 #
-# - A version tag (v2.0.0, v2.0.0-rc1) publishes; the tag must match
-#   config.yaml's version.
+# - A version tag (v2.0.0, v2.0.0-rc1) publishes; scripts/release-check.sh
+#   checks the tag matches config.yaml's version and a final release's
+#   CHANGELOG entry is dated.
 # - Run manually to build and test, or tick "push" for a dry run with a
-#   throwaway version.
+#   throwaway version (refused for a version that's already been released).
 # - Pull requests that change this workflow or the app's build only build and
 #   test, so updates to the build actions are tried before they're merged.
 
@@ -25,6 +26,7 @@ on:
       - .github/workflows/publish.yml
       - nfs-ganesha/Dockerfile
       - nfs-ganesha/patches/**
+      - scripts/release-check.sh
 
 permissions:
   contents: read
@@ -42,16 +44,16 @@ jobs:
         env:
           PUSH_INPUT: ${{ inputs.push }}
         run: |
-          version=$(sed -n 's/^version: *"\{0,1\}\([^"]*\)"\{0,1\} *$/\1/p' nfs-ganesha/config.yaml)
           push=false
           if [ "$GITHUB_REF_TYPE" = tag ]; then
-            if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
-              echo "::error::Tag $GITHUB_REF_NAME doesn't match config.yaml's version $version"
-              exit 1
-            fi
+            version=$(scripts/release-check.sh tag "$GITHUB_REF_NAME")
             push=true
           elif [ "$PUSH_INPUT" = true ]; then
+            version=$(EXISTING_TAGS=$(git ls-remote --tags origin | sed 's#.*refs/tags/##') \
+              scripts/release-check.sh dry-run)
             push=true
+          else
+            version=$(sed -n 's/^version: *"\{0,1\}\([^"]*\)"\{0,1\} *$/\1/p' nfs-ganesha/config.yaml)
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "push=$push" >> "$GITHUB_OUTPUT"
@@ -99,9 +101,7 @@ jobs:
         run: "! ss -tln | grep -E ':2049\\b'"
 
       - name: Test this exact image
-        run: |
-          echo "TESTED_LAYERS=$(docker image inspect -f '{{json .RootFS.Layers}}' "$IMAGE")" >> "$GITHUB_ENV"
-          SKIP_BUILD=1 make functional
+        run: SKIP_BUILD=1 make functional
 
       - if: failure()
         uses: actions/upload-artifact@v5
@@ -110,33 +110,33 @@ jobs:
           path: .test-logs/addon.log
           if-no-files-found: ignore
 
-      - name: Push (rebuilt from the cache, signed with cosign)
+      # Pushes the image the tests ran against rather than building it again,
+      # then signs the pushed digest, as the builder does when it pushes.
+      - name: Log in to GHCR
         if: needs.prepare.outputs.push == 'true'
-        uses: home-assistant/builder/actions/build-image@2026.09.0
+        uses: docker/login-action@v4
         with:
-          arch: ${{ matrix.arch }}
-          context: nfs-ganesha
-          image: ${{ matrix.image }}
-          image-tags: ${{ needs.prepare.outputs.version }}
-          version: ${{ needs.prepare.outputs.version }}
-          labels: |
-            io.hass.type=app
-            io.hass.name=NFS Server (Ganesha)
-            io.hass.description=Expose Home Assistant folders via NFS using nfs-ganesha
-            io.hass.url=https://github.com/sam-ward/nfs-ganesha-addon
-          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
-          load: "false"
-          push: "true"
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Compares filesystem layers: the image ids differ because the build
-      # stamps its creation time into a label each time it runs.
-      - name: The pushed image has the tested contents
+      - if: needs.prepare.outputs.push == 'true'
+        uses: sigstore/cosign-installer@v4.1.2
+
+      - name: Push the tested image and sign it with cosign
         if: needs.prepare.outputs.push == 'true'
+        env:
+          REPO: ${{ matrix.image }}
         run: |
-          docker image rm "$IMAGE" > /dev/null
-          docker pull -q "$IMAGE" > /dev/null
-          pushed=$(docker image inspect -f '{{json .RootFS.Layers}}' "$IMAGE")
-          if [ "$pushed" != "$TESTED_LAYERS" ]; then
-            echo "::error::The pushed image's layers differ from the tested image's"
-            exit 1
-          fi
+          docker push -q "$IMAGE"
+          # Asks the registry: with the containerd image store, RepoDigests
+          # can name the source index rather than what was pushed.
+          ref=$REPO@$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMAGE")
+          echo "Pushed $ref"
+          for i in 1 2 3 4 5; do
+            cosign sign --yes "$ref" && exit 0
+            echo "Signing attempt $i failed, retrying..."
+            sleep $((2 ** i))
+          done
+          echo "::error::Couldn't sign $ref"
+          exit 1
