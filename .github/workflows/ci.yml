@@ -30,6 +30,8 @@ jobs:
       - run: make unit
 
   changes:
+    # paths-filter needs a base to compare with, which only pull requests have.
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     outputs:
       addon: ${{ steps.filter.outputs.addon }}
@@ -47,8 +49,11 @@ jobs:
 
   functional:
     needs: [changes]
-    # Docs-only PRs skip the NFS tests; pushes and the weekly run always run them.
-    if: needs.changes.outputs.addon == 'true' || github.event_name != 'pull_request'
+    # Docs-only PRs skip the NFS tests; pushes and the weekly run always run
+    # them. !cancelled() keeps this job from being skipped with `changes`
+    # (skipped outside pull requests), and testing unless the filter answered
+    # "false" means a failed filter runs the tests rather than skipping them.
+    if: ${{ !cancelled() && needs.changes.outputs.addon != 'false' }}
     strategy:
       fail-fast: false
       matrix:
