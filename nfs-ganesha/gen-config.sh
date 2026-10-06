@@ -1,18 +1,138 @@
 #!/bin/bash
 # Writes ganesha.conf for the add-on options to stdout. Log lines go to stderr.
-# Usage: gen-config.sh [options.json] [root]   (root prefixes the folder existence check; tests only)
+# Usage: gen-config.sh [options.json] [root] [network-info.json]
+#   root prefixes the folder existence check (tests only).
+#   network-info.json resolves "auto" in authorized_ips: the Supervisor's
+#   /network/info data (or run.sh's routing-table fallback in the same shape),
+#   plus a "source" field naming where it came from.
 set -e
 
 CONFIG_PATH=${1:-/data/options.json}
 ROOT=${2:-/}
+NETWORK_INFO=${3:-}
 
-# Read the authorized_ips array (blank entries dropped) and join with commas for Ganesha
-AUTHORIZED_IPS=$(jq --raw-output \
-    '[.authorized_ips[]? | strings | gsub("^\\s+|\\s+$"; "") | select(length > 0)] | join(",")' \
+# Prints the network (a.b.c.d/nn) of HA's primary interface, or fails.
+# Accepts the Supervisor v1 shape (interface, connected, ipv4.address[]) and
+# the v2 one (name, state.connected, state.ipv4.addresses[]).
+resolve_auto() {
+    local iface cidr ip prefix a b c d n mask
+    [ -n "$NETWORK_INFO" ] && [ -s "$NETWORK_INFO" ] || return 1
+    read -r iface cidr < <(jq --raw-output '
+        [.interfaces[]?
+         | select(.primary == true and ((.connected // .state.connected) == true))
+         | [(.interface // .name),
+            (((.ipv4.address // .state.ipv4.addresses // []) | map(select(test(":") | not)))[0] // empty)]
+         | select(length == 2)][0] // empty | join(" ")' "$NETWORK_INFO") || return 1
+    [ -n "$cidr" ] || return 1
+    ip=${cidr%/*}; prefix=${cidr#*/}
+    [[ "$ip" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || return 1
+    a=${BASH_REMATCH[1]}; b=${BASH_REMATCH[2]}; c=${BASH_REMATCH[3]}; d=${BASH_REMATCH[4]}
+    [[ "$prefix" =~ ^[0-9]+$ ]] && (( prefix >= 8 && prefix <= 32 )) || return 1
+    (( a <= 255 && b <= 255 && c <= 255 && d <= 255 )) || return 1
+    mask=$(( (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF ))
+    n=$(( ((a << 24) | (b << 16) | (c << 8) | d) & mask ))
+    AUTO_NET="$(( n >> 24 & 255 )).$(( n >> 16 & 255 )).$(( n >> 8 & 255 )).$(( n & 255 ))/${prefix}"
+    AUTO_IFACE=$iface
+    AUTO_SOURCE=$(jq --raw-output '.source // "network info"' "$NETWORK_INFO")
+}
+
+# True if $1 is an entry Ganesha's Clients list can take safely: "*", an IPv4
+# address or CIDR, an IPv6 address or CIDR, a netgroup (@name), a host name
+# pattern (with * or ?), or a hostname. Anything else could be a typo that
+# silently matches no one, or break ganesha.conf.
+valid_client() {
+    local e=$1
+    [ "$e" = "*" ] && return 0
+    [[ "$e" =~ ^@[A-Za-z0-9._-]+$ ]] && return 0
+    if [[ "$e" == *[*?]* ]]; then
+        # "]" first: the only way to put a literal ] in a bracket expression.
+        [[ "$e" =~ ^[][A-Za-z0-9.*?-]+$ ]]
+        return
+    fi
+    # IPv4 address or subnet, strict dotted decimal: four octets 0-255 without
+    # leading zeros (lenient parsers read "010" as 8), prefix 0-32. Anything
+    # else of digits, dots and slashes is a malformed IPv4 entry.
+    local octet='(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])'
+    [[ "$e" =~ ^$octet(\.$octet){3}(/(3[0-2]|[12]?[0-9]))?$ ]] && return 0
+    [[ "$e" =~ ^[0-9./]+$ ]] && return 1
+    # IPv6 address or subnet: iproute2's parser decides (it's strict for IPv6).
+    if [[ "$e" == *:* ]]; then
+        ip route show to "$e" > /dev/null 2>&1
+        return
+    fi
+    # A hostname: dot-separated labels of letters, digits and inner hyphens,
+    # with at least one letter (an all-numeric entry must be a valid IPv4).
+    [[ "$e" =~ ^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$ ]] \
+        && [[ "$e" == *[A-Za-z]* ]]
+}
+
+# Read the authorized_ips array, blank entries dropped
+mapfile -t IP_ENTRIES < <(jq --raw-output \
+    '.authorized_ips[]? | strings | gsub("^\\s+|\\s+$"; "") | select(length > 0)' \
     "$CONFIG_PATH")
+
+# Replace "auto" with HA's primary subnet. Never guess: refuse if it can't be resolved.
+CLIENTS=()
+for entry in "${IP_ENTRIES[@]}"; do
+    [ "${entry,,}" != auto ] || entry=auto
+    if [ "$entry" != auto ] && ! valid_client "$entry"; then
+        echo "[ERROR] authorized_ips entry \"$entry\" is not an IP address, subnet (e.g. 192.168.1.0/24), hostname or pattern, @netgroup, \"auto\" or \"*\". Refusing to start." >&2
+        exit 1
+    fi
+    if [ "$entry" = auto ]; then
+        if ! resolve_auto; then
+            echo "[ERROR] authorized_ips \"auto\" could not be resolved (no connected primary network with an IPv4 address); set your subnet explicitly, e.g. 192.168.1.0/24. Refusing to start." >&2
+            exit 3  # run.sh retries this one while the network comes up
+        fi
+        echo "[NFS] authorized_ips \"auto\" -> ${AUTO_NET} (primary interface ${AUTO_IFACE}, from ${AUTO_SOURCE})" >&2
+        entry=$AUTO_NET
+    fi
+    [[ " ${CLIENTS[*]} " == *" $entry "* ]] || CLIENTS+=("$entry")
+done
+# Warn about a broad client list. All shared folders sit on one filesystem
+# with the rest of Home Assistant's data, and NFS file handles can be forged,
+# so every allowed client should be trusted with all of it (Ganesha documents
+# this). Broad means "*", a host pattern, a subnet wider than /16 (IPv6: /64),
+# or more than one subnet.
+BROAD=()
+SUBNETS=0
+for c in "${CLIENTS[@]}"; do
+    case "$c" in
+        *[*?]*) BROAD+=("$c") ;;
+        */*)
+            p=${c#*/}
+            if [[ "$c" == *:* ]]; then wide=64 host=128; else wide=16 host=32; fi
+            if (( p < wide )); then BROAD+=("$c"); fi
+            if (( p < host )); then SUBNETS=$((SUBNETS + 1)); fi
+            ;;
+    esac
+done
+if (( ${#BROAD[@]} > 0 || SUBNETS > 1 )); then
+    echo "[WARN] authorized_ips allows a wide range of clients (${CLIENTS[*]}). Every allowed client should be a machine you trust with all of Home Assistant's data: see \"Security\" in the app's Documentation. Prefer \"auto\" or specific addresses." >&2
+fi
+
+# Join with commas for Ganesha
+AUTHORIZED_IPS=$(IFS=,; echo "${CLIENTS[*]}")
 
 # Read the export_folders array
 EXPORT_FOLDERS=$(jq --raw-output '.export_folders[]? | strings' "$CONFIG_PATH")
+
+# Missing on installs upgraded from <=1.2.x, so fall back to the default.
+LOG_LEVEL=$(jq --raw-output '.log_level // "WARN"' "$CONFIG_PATH")
+echo "[NFS] Log level: ${LOG_LEVEL}" >&2
+
+# At WARN and quieter, keep 1.2.x's muting of chatty components. At EVENT and
+# above the user is debugging, so show everything.
+case "$LOG_LEVEL" in
+    NULL|FATAL|MAJ|CRIT|WARN)
+        LOG_COMPONENTS="COMPONENTS {
+        TIRPC = FATAL;
+        NFS_CB = FATAL;
+        INIT = FATAL;
+        DISPATCH = FATAL;
+    }" ;;
+    *) LOG_COMPONENTS="" ;;
+esac
 
 echo "[NFS] Authorized IPs: ${AUTHORIZED_IPS}" >&2
 echo "[NFS] Export folders: $(jq --raw-output '.export_folders | join(", ")' "$CONFIG_PATH")" >&2
@@ -34,6 +154,9 @@ NFS_CORE_PARAM
     NFS_Protocols = 4;
     Enable_NLM = false;
     Enable_RQUOTA = false;
+    # Ganesha 6.x calls prctl(PR_SET_IO_FLUSHER), which needs SYS_RESOURCE
+    # (granted in config.yaml). If a platform withholds it, start anyway.
+    Allow_Set_Io_Flusher_Fail = true;
 }
 
 NFSv4
@@ -48,6 +171,9 @@ EXPORT_DEFAULTS
     Squash = All_Squash;
     Anonymous_Uid = 0;
     Anonymous_Gid = 0;
+    # Re-read attributes on every access: Home Assistant and the Supervisor
+    # change files directly, and the default 60 s cache hid those changes.
+    Attr_Expiration_Time = 0;
 }
 
 NFS_KRB5
@@ -56,41 +182,37 @@ NFS_KRB5
 }
 
 LOG {
-    Default_Log_Level = WARN;
-    COMPONENTS {
-        TIRPC = FATAL;
-        NFS_CB = FATAL;
-        INIT = FATAL;
-        DISPATCH = FATAL;
-    }
+    Default_Log_Level = ${LOG_LEVEL};
+    ${LOG_COMPONENTS}
 }
 EOF
 
-# Add Exports based on user selection
-ID=10
+# Add Exports based on user selection.
+# Each option name maps to the folder config.yaml mounts (Path) and the path
+# clients mount (Pseudo). As in the Samba add-on, "addons"/"addon_configs" are
+# the legacy names of "local_apps"/"app_configs" and stay mountable as aliases.
+declare -A FOLDER_PATH=(
+    [config]=/homeassistant [ssl]=/ssl [local_apps]=/local_apps
+    [app_configs]=/app_configs [backup]=/backup [share]=/share [media]=/media
+)
+declare -A LEGACY_PSEUDO=([local_apps]=/addons [app_configs]=/addon_configs)
+# Fixed export ids: clients' file handles include them, so a folder's id must
+# not change when other folders are added or removed. 10-16 follow 1.2.x's
+# default order, so installs updated from it keep their ids.
+declare -A FOLDER_ID=(
+    [config]=10 [ssl]=11 [local_apps]=12 [app_configs]=13
+    [backup]=14 [share]=15 [media]=16
+)
+declare -A LEGACY_ID=([local_apps]=17 [app_configs]=18)
 
-while IFS= read -r FOLDER; do
-    # Only the folders config.yaml maps. An empty name would export "/" itself.
-    case "$FOLDER" in
-        config|ssl|addons|addon_configs|backup|share|media) ;;
-        "") continue ;;
-        *)
-            echo "[WARN] Unknown export folder '$FOLDER', skipping..." >&2
-            continue
-            ;;
-    esac
-    DIR="/$FOLDER"
-
-    if [ -d "${ROOT%/}$DIR" ]; then
-        echo "[NFS] Exporting: $DIR" >&2
-
-        cat <<EOF
+export_block() {  # <id> <path> <pseudo>
+    cat <<EOF
 
 EXPORT
 {
-    Export_Id = $ID;
-    Path = "$DIR";
-    Pseudo = "$DIR";
+    Export_Id = $1;
+    Path = "$2";
+    Pseudo = "$3";
     FSAL { Name = VFS; }
     Access_Type = None;
     CLIENT
@@ -101,13 +223,44 @@ EXPORT
     }
 }
 EOF
-        ID=$((ID+1))
+}
+
+EXPORTED=" "
+ALIASES=()
+
+while IFS= read -r FOLDER; do
+    case "$FOLDER" in
+        addons) FOLDER=local_apps ;;
+        addon_configs) FOLDER=app_configs ;;
+    esac
+    # Only the folders config.yaml maps. An empty name would export "/" itself.
+    case "$FOLDER" in
+        config|ssl|local_apps|app_configs|backup|share|media) ;;
+        "") continue ;;
+        *)
+            echo "[WARN] Unknown export folder '$FOLDER', skipping..." >&2
+            continue
+            ;;
+    esac
+    [[ "$EXPORTED" == *" $FOLDER "* ]] && continue
+    DIR=${FOLDER_PATH[$FOLDER]}
+
+    if [ -d "${ROOT%/}$DIR" ]; then
+        echo "[NFS] Exporting: /$FOLDER" >&2
+        export_block "${FOLDER_ID[$FOLDER]}" "$DIR" "/$FOLDER"
+        EXPORTED+="$FOLDER "
+        [ -z "${LEGACY_PSEUDO[$FOLDER]:-}" ] || ALIASES+=("$FOLDER")
     else
         echo "[WARN] Directory $DIR does not exist, skipping..." >&2
     fi
 done <<< "$EXPORT_FOLDERS"
 
-if [ "$ID" -eq 10 ]; then
+for FOLDER in "${ALIASES[@]}"; do
+    echo "[NFS] Also exporting: ${LEGACY_PSEUDO[$FOLDER]} (${LEGACY_PSEUDO[$FOLDER]} is a legacy path for /$FOLDER; switch clients to /$FOLDER)" >&2
+    export_block "${LEGACY_ID[$FOLDER]}" "${FOLDER_PATH[$FOLDER]}" "${LEGACY_PSEUDO[$FOLDER]}"
+done
+
+if [ "$EXPORTED" = " " ]; then
     echo "[ERROR] No export folders to share; select at least one in export_folders. Refusing to start." >&2
     exit 1
 fi

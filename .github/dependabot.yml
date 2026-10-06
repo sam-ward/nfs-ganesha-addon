@@ -1,0 +1,14 @@
+# Weekly update pull requests for what this repository pins: the GitHub
+# Actions it uses and the Docker base images (by digest). Debian packages
+# can't be tracked here; the weekly CI run catches their changes.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: {interval: weekly}
+  - package-ecosystem: docker
+    directories:
+      - /nfs-ganesha
+      - /tests/toolbox
+      - /tests/haos
+    schedule: {interval: weekly}

@@ -2,12 +2,26 @@
 
 ## Installation
 
+**Requirements:** Home Assistant OS or Supervised on amd64 or aarch64, with Supervisor 2026.07.1 or later (the Supervisor normally updates itself).
+
 1. Add this repository to your Home Assistant instance
 2. Install the "NFS Server (Ganesha)" app
 3. Configure the app (see Configuration below)
 4. Start the app
+5. Recommended: turn on **Watchdog** on the app's Info page, so Home Assistant restarts the app if it stops unexpectedly or NFS stops responding.
 
 ## Configuration
+
+> **Defaults (new in 2.0.0)**
+>
+> - By default the app shares only `share`, `media` and `backup`, and only with clients on Home Assistant's own network (`auto`).
+> - **Updating from an earlier version:** if you ever saved the app's options, your settings are kept. If you never changed them, then the new defaults apply after the update, so `config`, `ssl`, `local_apps` and `app_configs` will no longer be shared, and clients outside Home Assistant's own subnet (for example over a VPN or from another VLAN) are refused.
+> - To also share `config`, `ssl`, `local_apps` or `app_configs`, add them to `export_folders`. Each one exposes sensitive files:
+>   - `config`: your Home Assistant configuration, including `secrets.yaml`
+>   - `ssl`: certificates and their private keys
+>   - `local_apps`: the source of locally installed apps
+>   - `app_configs`: other apps' configuration, which can include their secrets
+> - `authorized_ips: "auto"` means that `authorized_ips` will be set to the same subnet as Home Assistant's own network when the app starts. The logs will show a message to indicate what was found (e.g. `authorized_ips "auto" -> 192.168.1.0/24 (primary interface end0, from Supervisor)`). You can combine it with other entries, or replace it with explicit subnets.
 
 ### Example Configuration
 
@@ -25,14 +39,25 @@ export_folders:
 
 **Required:** Yes  
 **Type:** List of strings  
-**Default:** All private network ranges
+**Default:** `auto`
 
-List of IP addresses or CIDR subnets allowed to access your NFS shares.
+List of IP addresses or CIDR subnets allowed to access your NFS shares, and/or `auto`. Each entry must be an IPv4 or IPv6 address, subnet (for example `192.168.1.0/24`), hostname or host pattern (`*.lan`), a netgroup (`@name`), `auto` or `*`; if an entry is anything else (a typo such as `192.168.1.0/33`), the app refuses to start and names it in the log.
+
+`auto` is replaced at each start by the subnet of Home Assistant's primary network interface (from Settings → System → Network), for example `192.168.1.0/24`. If it can't resolve it (for example while Home Assistant is still starting), the app waits for up to a minute. If it can't be resolved after that, the app refuses to start and logs why. Clients on other subnets, VPNs or VLANs need their own entries.
 
 **Examples:**
 
 ```yaml
-# Allow a specific subnet (recommended)
+# Home Assistant's own network (the default)
+authorized_ips:
+  - auto
+
+# Home Assistant's network plus a VPN subnet
+authorized_ips:
+  - auto
+  - "10.20.0.0/24"
+
+# Allow a specific subnet
 authorized_ips:
   - "192.168.1.0/24"
 
@@ -52,37 +77,42 @@ authorized_ips:
   - "*"
 ```
 
-**Private Network Ranges (default):**
-- `10.0.0.0/8` - Class A (10.0.0.0 - 10.255.255.255)
-- `172.16.0.0/12` - Class B (172.16.0.0 - 172.31.255.255)
-- `192.168.0.0/16` - Class C (192.168.0.0 - 192.168.255.255)
+Before 2.0.0 the default was all private network ranges (`10.0.0.0/8`, `172.16.0.0/12` and `192.168.0.0/16`). Installs that saved their options keep them when updating; installs that never did get `auto` (see "Defaults" above).
 
 ### Option: `export_folders`
 
 **Required:** Yes  
 **Type:** Multi-select list  
-**Default:** All folders
+**Default:** `share`, `media`, `backup`
 
 Select which Home Assistant folders to export via NFS.
 
 **Available folders:**
-- `config` - Home Assistant configuration files
-- `ssl` - SSL certificates
-- `addons` - Local apps
-- `addon_configs` - App configuration files
+- `config` - Home Assistant configuration files, including `secrets.yaml`
+- `ssl` - SSL certificates and their private keys
+- `local_apps` - Local apps
+- `app_configs` - App configuration files, which can include other apps' secrets
 - `backup` - Backup files
 - `share` - Shared files
 - `media` - Media files
 
+`local_apps` and `app_configs` were previously called `addons` and `addon_configs`. The app still accepts the old names and renames them in your saved settings automatically. Clients can still mount the old paths (`/addons`, `/addon_configs`), but they are deprecated. You should switch your mounts to `/local_apps` and `/app_configs`.
+
 **Examples:**
 
 ```yaml
-# Export everything (default)
+# The default
+export_folders:
+  - share
+  - media
+  - backup
+
+# Export everything (includes secrets and private keys)
 export_folders:
   - config
   - ssl
-  - addons
-  - addon_configs
+  - local_apps
+  - app_configs
   - backup
   - share
   - media
@@ -95,6 +125,31 @@ export_folders:
 # Export only media
 export_folders:
   - media
+```
+
+### Option: `log_level`
+
+**Required:** No  
+**Type:** One of `NULL`, `FATAL`, `MAJ`, `CRIT`, `WARN`, `EVENT`, `INFO`, `DEBUG`, `MID_DEBUG`, `FULL_DEBUG`  
+**Default:** `WARN`
+
+How much the app and the NFS server log. Leave it at `WARN` unless you're troubleshooting, because the debug levels are very verbose.
+
+**What the app logs at each level:**
+
+| Level | What you see in the app's log |
+|---|---|
+| Every level | The app version, the NFS-Ganesha version, the log level, the authorized IPs and each exported folder. Include these lines when you ask for help. |
+| `NULL` to `WARN` | NFS-Ganesha's warnings and errors. A few noisy Ganesha components (`TIRPC`, `NFS_CB`, `INIT`, `DISPATCH`) only log fatal errors, as in earlier versions, and Ganesha's messages about log-level changes are hidden. |
+| `EVENT` and above | Nothing is muted or hidden: every Ganesha component logs at the chosen level. |
+| `DEBUG`, `MID_DEBUG`, `FULL_DEBUG` | Also prints the full generated `ganesha.conf` before the server starts. It contains your authorized IPs and folder names. |
+
+For what each level means inside NFS-Ganesha, see the [NFS-Ganesha logging documentation](https://github.com/nfs-ganesha/nfs-ganesha/blob/next/src/doc/man/ganesha-log-config.rst).
+
+**Example:**
+
+```yaml
+log_level: DEBUG
 ```
 
 ## Mounting from Clients
@@ -159,34 +214,10 @@ sudo umount /Volumes/homeassistant
 
 ### Windows
 
-#### Prerequisites
+Windows' built-in NFS client ("Services for NFS") only supports NFSv3, and this app is NFSv4-only, so it can't connect. Either:
 
-Enable NFS Client:
-1. Open Settings → Apps → Optional Features
-2. Click "Add a feature"
-3. Search for "Services for NFS"
-4. Install "Services for NFS" (requires reboot)
-
-Or via PowerShell (as Administrator):
-```powershell
-Enable-WindowsOptionalFeature -Online -FeatureName ServicesForNFS-ClientOnly
-```
-
-#### Mount the Share
-
-```cmd
-# Map as network drive
-mount -o anon \\<HA_IP>\config Z:
-
-# Access the drive
-Z:
-dir
-
-# Unmount
-umount Z:
-```
-
-**Note:** Windows uses backslashes and converts the NFS path format automatically.
+- **Use the official Samba share app (recommended).** It shares the same Home Assistant folders over SMB, which Windows supports natively.
+- **Use a third-party NFSv4 client for Windows.**
 
 ## Troubleshooting
 
@@ -202,9 +233,10 @@ umount Z:
    - Check your `authorized_ips` includes your client IP
    - Find your client IP: `ip addr show` (Linux), `ifconfig` (macOS), `ipconfig` (Windows)
 
-3. **Check addon logs:**
+3. **Check the app's logs:**
    - Settings → Apps → NFS Server (Ganesha) → Logs
    - Look for errors or warnings
+   - For more detail, set `log_level` to `DEBUG`, restart the app and try again
 
 ### `showmount -e` doesn't work
 
@@ -234,13 +266,22 @@ telnet <HA_IP> 2049
 nc -zv <HA_IP> 2049
 ```
 
+### "No such file or directory" when mounting
+
+**Cause:** Your client isn't in `authorized_ips`. NFS-Ganesha hides exports from clients it doesn't allow, so the mount fails as if the folder didn't exist.
+
+**Solution:**
+1. Check the app's log for the `authorized_ips "auto" ->` line to see which subnet `auto` resolved to
+2. If your client is on another subnet (a VPN or VLAN, for example), add that subnet to `authorized_ips`
+3. Restart the app
+
 ### Permission denied
 
 **Cause:** Your client IP is not in the `authorized_ips` list.
 
 **Solution:**
 1. Find your client IP
-2. Add it to `authorized_ips` in the addon configuration
+2. Add it to `authorized_ips` in the app's configuration
 3. Restart the app
 
 ### Mount hangs or times out
@@ -248,8 +289,8 @@ nc -zv <HA_IP> 2049
 **Cause:** Network issues or firewall blocking NFS traffic.
 
 **Solution:**
-- Ensure client and server are on same network/VLAN
-- Check firewall allows port 2049 (TCP/UDP)
+- Ensure client and server are on the same network/VLAN
+- Check the firewall allows port 2049 (TCP)
 - Try adding mount options: `-o soft,timeo=10`
 
 ### Stale file handle error
@@ -277,13 +318,24 @@ sudo mount -t nfs4 <HA_IP>:/ /mnt/homeassistant
    mount -t nfs4 -o rsize=1048576,wsize=1048576 <HA_IP>:/ /mnt/ha
    ```
 
-## Security Considerations
+## Security
 
-1. **Use specific IPs/subnets** - Don't use `*` in production
+**Treat every client in `authorized_ips` as trusted with all of Home Assistant's data.** The folders this app shares sit on the same filesystem as everything else: Home Assistant's configuration and secrets, other apps' data, and backups. NFS identifies files by "file handles", and [NFS-Ganesha's documentation](https://github.com/nfs-ganesha/nfs-ganesha/blob/next/src/doc/man/ganesha-export-config.rst) notes that when one filesystem is shared as several exports, a rogue client may be able to forge file handles and reach parts of it that weren't shared with it. So the folders you choose control what clients normally see, but they aren't a barrier against an allowed machine that deliberately crafts NFS requests: `authorized_ips` is the real boundary. This is how NFS generally works, including Linux's own NFS server by default.
+
+1. **Keep `authorized_ips` tight** - Prefer `auto` or specific addresses; avoid broad ranges, and never use `*`. The app logs a warning at startup when the list is broad (`*` or a host pattern, a subnet wider than `/16`, or more than one subnet).
 2. **Network isolation** - Keep NFS on a trusted network/VLAN
-3. **No encryption** - NFSv4 traffic is not encrypted (use VPN if needed)
+3. **No encryption** - NFSv4 traffic is not encrypted (use a VPN if needed)
 4. **Firewall** - Consider blocking port 2049 at your network edge
 5. **Home use only** - This configuration is designed for home networks
+
+### Privileges
+
+The app asks Home Assistant for two extra capabilities, and nothing more:
+
+- **`DAC_READ_SEARCH`** - the NFS server reopens files by their file handle, which needs this capability.
+- **`SYS_RESOURCE`** - lets the NFS server tell the kernel it is part of the storage path, which prevents stalls when memory is low.
+
+The app runs under its own AppArmor profile, which limits what the NFS server and the startup scripts can do (capabilities, network access and programs they can run). Its security rating is 4 (up from 2).
 
 ## Advanced Usage
 

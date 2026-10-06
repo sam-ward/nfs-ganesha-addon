@@ -1,0 +1,142 @@
+name: Publish images
+
+# Builds the app's image for each architecture, runs the functional tests
+# against that exact image, and pushes it to GHCR, where the Supervisor
+# pulls it from (config.yaml's image:).
+#
+# - A version tag (v2.0.0, v2.0.0-rc1) publishes; scripts/release-check.sh
+#   checks the tag matches config.yaml's version and a final release's
+#   CHANGELOG entry is dated.
+# - Run manually to build and test, or tick "push" for a dry run with a
+#   throwaway version (refused for a version that's already been released).
+# - Pull requests that change this workflow or the app's build only build and
+#   test, so updates to the build actions are tried before they're merged.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      push:
+        description: Push the images (for a dry run with a throwaway version)
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - .github/workflows/publish.yml
+      - nfs-ganesha/Dockerfile
+      - nfs-ganesha/patches/**
+      - scripts/release-check.sh
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      push: ${{ steps.version.outputs.push }}
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+      - id: version
+        env:
+          PUSH_INPUT: ${{ inputs.push }}
+        run: |
+          push=false
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            version=$(scripts/release-check.sh tag "$GITHUB_REF_NAME")
+            push=true
+          elif [ "$PUSH_INPUT" = true ]; then
+            version=$(EXISTING_TAGS=$(git ls-remote --tags origin | sed 's#.*refs/tags/##') \
+              scripts/release-check.sh dry-run)
+            push=true
+          else
+            version=$(sed -n 's/^version: *"\{0,1\}\([^"]*\)"\{0,1\} *$/\1/p' nfs-ganesha/config.yaml)
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "push=$push" >> "$GITHUB_OUTPUT"
+          echo "Version $version, push: $push"
+      - id: matrix
+        uses: home-assistant/builder/actions/prepare-multi-arch-matrix@2026.09.0
+        with:
+          architectures: '["amd64", "aarch64"]'
+          image-name: addon-nfs_ganesha
+
+  build:
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    name: build (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      packages: write   # push to GHCR
+      id-token: write   # cosign keyless signing
+    env:
+      IMAGE: ${{ matrix.image }}:${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build (loaded locally, not pushed)
+        uses: home-assistant/builder/actions/build-image@2026.09.0
+        with:
+          arch: ${{ matrix.arch }}
+          context: nfs-ganesha
+          image: ${{ matrix.image }}
+          image-tags: ${{ needs.prepare.outputs.version }}
+          version: ${{ needs.prepare.outputs.version }}
+          labels: |
+            io.hass.type=app
+            io.hass.name=NFS Server (Ganesha)
+            io.hass.description=Expose Home Assistant folders via NFS using nfs-ganesha
+            io.hass.url=https://github.com/sam-ward/nfs-ganesha-addon
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          load: "true"
+          push: "false"
+
+      - name: Port 2049 is free
+        run: "! ss -tln | grep -E ':2049\\b'"
+
+      - name: Test this exact image
+        run: SKIP_BUILD=1 make functional
+
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: publish-addon-log-${{ matrix.arch }}
+          path: .test-logs/addon.log
+          if-no-files-found: ignore
+
+      # Pushes the image the tests ran against rather than building it again,
+      # then signs the pushed digest, as the builder does when it pushes.
+      - name: Log in to GHCR
+        if: needs.prepare.outputs.push == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - if: needs.prepare.outputs.push == 'true'
+        uses: sigstore/cosign-installer@v4.1.2
+
+      - name: Push the tested image and sign it with cosign
+        if: needs.prepare.outputs.push == 'true'
+        env:
+          REPO: ${{ matrix.image }}
+        run: |
+          docker push -q "$IMAGE"
+          # Asks the registry: with the containerd image store, RepoDigests
+          # can name the source index rather than what was pushed.
+          ref=$REPO@$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMAGE")
+          echo "Pushed $ref"
+          for i in 1 2 3 4 5; do
+            cosign sign --yes "$ref" && exit 0
+            echo "Signing attempt $i failed, retrying..."
+            sleep $((2 ** i))
+          done
+          echo "::error::Couldn't sign $ref"
+          exit 1
