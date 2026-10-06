@@ -2,24 +2,26 @@
 
 ## Installation
 
+**Requirements:** Home Assistant OS or Supervised on amd64 or aarch64, with Supervisor 2026.07.1 or later (the Supervisor normally updates itself).
+
 1. Add this repository to your Home Assistant instance
 2. Install the "NFS Server (Ganesha)" app
 3. Configure the app (see Configuration below)
 4. Start the app
-5. Recommended: turn on **Watchdog** on the app's Info page, so Home Assistant restarts the app if it stops unexpectedly or NFS stops answering
+5. Recommended: turn on **Watchdog** on the app's Info page, so Home Assistant restarts the app if it stops unexpectedly or NFS stops responding.
 
 ## Configuration
 
-> **Defaults (new in this version)**
+> **Defaults (new in 2.0.0)**
 >
 > - By default the app shares only `share`, `media` and `backup`, and only with clients on Home Assistant's own network (`auto`).
-> - **Updating from an earlier version:** if you ever saved the app's options, your settings are kept. If you never changed them, the new defaults apply after the update, so `config`, `ssl`, `local_apps` and `app_configs` are no longer shared, and clients outside Home Assistant's own subnet (for example over a VPN or from another VLAN) are refused. Add them back in the options if you need them.
+> - **Updating from an earlier version:** if you ever saved the app's options, your settings are kept. If you never changed them, then the new defaults apply after the update, so `config`, `ssl`, `local_apps` and `app_configs` will no longer be shared, and clients outside Home Assistant's own subnet (for example over a VPN or from another VLAN) are refused.
 > - To also share `config`, `ssl`, `local_apps` or `app_configs`, add them to `export_folders`. Each one exposes sensitive files:
 >   - `config`: your Home Assistant configuration, including `secrets.yaml`
 >   - `ssl`: certificates and their private keys
 >   - `local_apps`: the source of locally installed apps
 >   - `app_configs`: other apps' configuration, which can include their secrets
-> - `auto` means Home Assistant's own network subnet, worked out at each start. The app's log shows what it resolved to, for example `authorized_ips "auto" -> 192.168.1.0/24 (primary interface end0, from Supervisor)`. You can combine it with other entries, or replace it with explicit subnets.
+> - `authorized_ips: "auto"` means that `authorized_ips` will be set to the same subnet as Home Assistant's own network when the app starts. The logs will show a message to indicate what was found (e.g. `authorized_ips "auto" -> 192.168.1.0/24 (primary interface end0, from Supervisor)`). You can combine it with other entries, or replace it with explicit subnets.
 
 ### Example Configuration
 
@@ -39,9 +41,9 @@ export_folders:
 **Type:** List of strings  
 **Default:** `auto`
 
-List of IP addresses or CIDR subnets allowed to access your NFS shares, and/or `auto`. Each entry must be an IPv4 or IPv6 address, a subnet (for example `192.168.1.0/24`), a hostname or host pattern (`*.lan`), a netgroup (`@name`), `auto` or `*`; if an entry is anything else (a typo such as `192.168.1.0/33`), the app refuses to start and names it in the log.
+List of IP addresses or CIDR subnets allowed to access your NFS shares, and/or `auto`. Each entry must be an IPv4 or IPv6 address, subnet (for example `192.168.1.0/24`), hostname or host pattern (`*.lan`), a netgroup (`@name`), `auto` or `*`; if an entry is anything else (a typo such as `192.168.1.0/33`), the app refuses to start and names it in the log.
 
-`auto` is replaced at each start by the subnet of Home Assistant's primary network interface (from Settings → System → Network), for example `192.168.1.0/24`. If it can't work it out yet (for example while Home Assistant is still starting its network), the app waits for up to a minute; if it still can't, it refuses to start and logs why, rather than guessing. Clients on other subnets, VPNs or VLANs need their own entries.
+`auto` is replaced at each start by the subnet of Home Assistant's primary network interface (from Settings → System → Network), for example `192.168.1.0/24`. If it can't resolve it (for example while Home Assistant is still starting), the app waits for up to a minute. If it can't be resolved after that, the app refuses to start and logs why. Clients on other subnets, VPNs or VLANs need their own entries.
 
 **Examples:**
 
@@ -75,7 +77,7 @@ authorized_ips:
   - "*"
 ```
 
-Installs from before this change default to all private network ranges (`10.0.0.0/8`, `172.16.0.0/12` and `192.168.0.0/16`) and keep that setting until you change it.
+Before 2.0.0 the default was all private network ranges (`10.0.0.0/8`, `172.16.0.0/12` and `192.168.0.0/16`). Installs that saved their options keep them when updating; installs that never did get `auto` (see "Defaults" above).
 
 ### Option: `export_folders`
 
@@ -90,11 +92,11 @@ Select which Home Assistant folders to export via NFS.
 - `ssl` - SSL certificates and their private keys
 - `local_apps` - Local apps
 - `app_configs` - App configuration files, which can include other apps' secrets
-
-`local_apps` and `app_configs` were called `addons` and `addon_configs` before Home Assistant renamed add-ons to apps. The app still accepts the old names and renames them in your saved settings automatically. Clients can still mount the old paths (`/addons`, `/addon_configs`), but they are deprecated: switch your mounts to `/local_apps` and `/app_configs`.
 - `backup` - Backup files
 - `share` - Shared files
 - `media` - Media files
+
+`local_apps` and `app_configs` were previously called `addons` and `addon_configs`. The app still accepts the old names and renames them in your saved settings automatically. Clients can still mount the old paths (`/addons`, `/addon_configs`), but they are deprecated. You should switch your mounts to `/local_apps` and `/app_configs`.
 
 **Examples:**
 
@@ -231,7 +233,7 @@ Windows' built-in NFS client ("Services for NFS") only supports NFSv3, and this 
    - Check your `authorized_ips` includes your client IP
    - Find your client IP: `ip addr show` (Linux), `ifconfig` (macOS), `ipconfig` (Windows)
 
-3. **Check addon logs:**
+3. **Check the app's logs:**
    - Settings → Apps → NFS Server (Ganesha) → Logs
    - Look for errors or warnings
    - For more detail, set `log_level` to `DEBUG`, restart the app and try again
@@ -279,7 +281,7 @@ nc -zv <HA_IP> 2049
 
 **Solution:**
 1. Find your client IP
-2. Add it to `authorized_ips` in the addon configuration
+2. Add it to `authorized_ips` in the app's configuration
 3. Restart the app
 
 ### Mount hangs or times out
@@ -287,8 +289,8 @@ nc -zv <HA_IP> 2049
 **Cause:** Network issues or firewall blocking NFS traffic.
 
 **Solution:**
-- Ensure client and server are on same network/VLAN
-- Check firewall allows port 2049 (TCP/UDP)
+- Ensure client and server are on the same network/VLAN
+- Check the firewall allows port 2049 (TCP)
 - Try adding mount options: `-o soft,timeo=10`
 
 ### Stale file handle error
@@ -322,7 +324,7 @@ sudo mount -t nfs4 <HA_IP>:/ /mnt/homeassistant
 
 1. **Keep `authorized_ips` tight** - Prefer `auto` or specific addresses; avoid broad ranges, and never use `*`. The app logs a warning at startup when the list is broad (`*` or a host pattern, a subnet wider than `/16`, or more than one subnet).
 2. **Network isolation** - Keep NFS on a trusted network/VLAN
-3. **No encryption** - NFSv4 traffic is not encrypted (use VPN if needed)
+3. **No encryption** - NFSv4 traffic is not encrypted (use a VPN if needed)
 4. **Firewall** - Consider blocking port 2049 at your network edge
 5. **Home use only** - This configuration is designed for home networks
 

@@ -9,14 +9,16 @@ Expose Home Assistant folders via NFS using nfs-ganesha in userspace.
 
 ## Features
 
-- ✅ NFSv4 support
-- ✅ Select which Home Assistant folders to export
-- ✅ IP-based access control with support for multiple IPs/subnets
-- ✅ Userspace implementation (no kernel modules required)
-- ✅ Works with host network mode for best compatibility
-- ✅ Read-write access to all exported folders
+- NFSv4 support
+- Select which Home Assistant folders to export
+- IP-based access control with support for multiple IPs/subnets
+- Userspace implementation (no kernel modules required)
+- Works with host network mode for best compatibility
+- Read-write access to all exported folders
 
 ## Installation
+
+**Requirements:** Home Assistant OS or Supervised on amd64 or aarch64, with Supervisor 2026.07.1 or later (the Supervisor normally updates itself).
 
 1. Click the button below to add this repository to your Home Assistant instance:
 
@@ -28,7 +30,7 @@ Expose Home Assistant folders via NFS using nfs-ganesha in userspace.
    - Select **Repositories**
    - Add: `https://github.com/sam-ward/nfs-ganesha-addon`
 
-2. Find "NFS Server (Ganesha)" in the app store
+2. Find "NFS Server (Ganesha)" in the App Store
 3. Click "Install"
 4. Configure the app (see Configuration section below)
 5. Start the app
@@ -37,16 +39,16 @@ Expose Home Assistant folders via NFS using nfs-ganesha in userspace.
 
 ### Basic Configuration
 
-> **Defaults (new in this version)**
+> **Defaults (new in 2.0.0)**
 >
 > - By default the app shares only `share`, `media` and `backup`, and only with clients on Home Assistant's own network (`auto`).
-> - **Updating from an earlier version:** if you ever saved the app's options, your settings are kept. If you never changed them, the new defaults apply after the update, so `config`, `ssl`, `local_apps` and `app_configs` are no longer shared, and clients outside Home Assistant's own subnet (for example over a VPN or from another VLAN) are refused. Add them back in the options if you need them.
+> - **Updating from an earlier version:** if you ever saved the app's options, your settings are kept. If you never changed them, then the new defaults apply after the update, so `config`, `ssl`, `local_apps` and `app_configs` will no longer be shared, and clients outside Home Assistant's own subnet (for example over a VPN or from another VLAN) are refused.
 > - To also share `config`, `ssl`, `local_apps` or `app_configs`, add them to `export_folders`. Each one exposes sensitive files:
 >   - `config`: your Home Assistant configuration, including `secrets.yaml`
 >   - `ssl`: certificates and their private keys
 >   - `local_apps`: the source of locally installed apps
 >   - `app_configs`: other apps' configuration, which can include their secrets
-> - `auto` means Home Assistant's own network subnet, worked out at each start. The app's log shows what it resolved to, for example `authorized_ips "auto" -> 192.168.1.0/24 (primary interface end0, from Supervisor)`. You can combine it with other entries, or replace it with explicit subnets.
+> - `authorized_ips: "auto"` means that `authorized_ips` will be set to the same subnet as Home Assistant's own network when the app starts. The logs will show a message to indicate what was found (e.g. `authorized_ips "auto" -> 192.168.1.0/24 (primary interface end0, from Supervisor)`). You can combine it with other entries, or replace it with explicit subnets.
 
 ```yaml
 authorized_ips:
@@ -61,9 +63,9 @@ export_folders:
 
 #### `authorized_ips` (required)
 
-List of IP addresses or CIDR subnets allowed to access the NFS shares, and/or `auto`. **Treat every client you allow as trusted with all of Home Assistant's data, not just the shared folders**, and keep this list tight: see "Security" in the app's Documentation. Each entry must be an IPv4 or IPv6 address, a subnet (for example `192.168.1.0/24`), a hostname or host pattern (`*.lan`), a netgroup (`@name`), `auto` or `*`; if an entry is anything else (a typo such as `192.168.1.0/33`), the app refuses to start and names it in the log.
+List of IP addresses or CIDR subnets allowed to access the NFS shares, and/or `auto`. **Treat every client you allow as trusted with all of Home Assistant's data, not just the shared folders**, and keep this list tight: see "Security" in the app's Documentation. Each entry must be an IPv4 or IPv6 address, subnet (for example `192.168.1.0/24`), hostname or host pattern (`*.lan`), a netgroup (`@name`), `auto` or `*`; if an entry is anything else (a typo such as `192.168.1.0/33`), the app refuses to start and names it in the log.
 
-`auto` is replaced at each start by the subnet of Home Assistant's primary network interface (from Settings → System → Network), for example `192.168.1.0/24`. If it can't work it out yet (for example while Home Assistant is still starting its network), the app waits for up to a minute; if it still can't, it refuses to start and logs why, rather than guessing. Clients on other subnets, VPNs or VLANs need their own entries.
+`auto` is replaced at each start by the subnet of Home Assistant's primary network interface (from Settings → System → Network), for example `192.168.1.0/24`. If it can't resolve it (for example while Home Assistant is still starting), the app waits for up to a minute. If it can't be resolved after that, the app refuses to start and logs why. Clients on other subnets, VPNs or VLANs need their own entries.
 
 **Default:** `auto`
 ```yaml
@@ -109,7 +111,7 @@ List of Home Assistant folders to export via NFS. Select one or more from:
 - `share` - Shared files
 - `media` - Media files
 
-`local_apps` and `app_configs` were called `addons` and `addon_configs` before Home Assistant renamed add-ons to apps. The app still accepts the old names and renames them in your saved settings automatically. Clients can still mount the old paths (`/addons`, `/addon_configs`), but they are deprecated: switch your mounts to `/local_apps` and `/app_configs`.
+`local_apps` and `app_configs` were previously called `addons` and `addon_configs`. The app still accepts the old names and renames them in your saved settings automatically. Clients can still mount the old paths (`/addons`, `/addon_configs`), but they are deprecated. You should switch your mounts to `/local_apps` and `/app_configs`.
 
 **Default:** `share`, `media` and `backup`. `config`, `ssl`, `local_apps` and `app_configs` contain secrets or private keys, so add them only if you need them.
 ```yaml

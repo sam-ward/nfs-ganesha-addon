@@ -1,11 +1,16 @@
 name: NFS Server (Ganesha)
-version: "1.2.1"
+version: "2.0.0"
 slug: nfs_ganesha
 description: Expose Home Assistant folders via NFS using nfs-ganesha
 url: https://github.com/sam-ward/nfs-ganesha-addon
 # Prebuilt images, published by .github/workflows/publish.yml and tested
 # before they're pushed; the Supervisor pulls these instead of building.
 image: ghcr.io/sam-ward/{arch}-addon-nfs_ganesha
+# 2.0.0 changes the defaults for installs that never saved their options (see
+# the CHANGELOG), so the Supervisor won't auto-update across it: users update
+# by hand, after seeing the changelog.
+breaking_versions:
+  - "2.0.0"
 startup: system
 arch:
   - aarch64
