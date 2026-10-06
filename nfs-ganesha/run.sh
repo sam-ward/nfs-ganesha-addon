@@ -160,11 +160,17 @@ check_exports &
 
 RC=0
 wait "$GANESHA_PID" || RC=$?
-# A trapped signal interrupts wait; wait again for Ganesha's own exit code.
+# A trapped signal interrupts wait, so wait again for Ganesha's own exit code.
+# If Ganesha had already exited (and been reaped), wait says 127: keep the
+# code we already have.
 if [ "$STOPPING" = 1 ]; then
-    RC=0
-    wait "$GANESHA_PID" || RC=$?
+    RC2=0
+    wait "$GANESHA_PID" || RC2=$?
+    [ "$RC2" -eq 127 ] || RC=$RC2
 fi
+# Ganesha is gone: ignore further stop signals so the filter can drain its
+# last lines (often the reason it stopped).
+trap '' TERM INT
 wait "$FILTER_PID" || true
 
 echo "[NFS] Ganesha exited with code ${RC}"
