@@ -8,6 +8,13 @@ On the downside, this also means that support for armhf, armv7 and i386 has been
 
 A large amount of development has also gone into automated testing and builds, which should streamline future releases.
 
+#### With thanks:
+ - @morgaroth for the Debian trixie and nfs-ganesha upgrade (PR #4) that this release is built on.
+ - @andremmfaria for the new icon and logo, the folder mapping change and the push for prebuilt images (PR #2), and for raising the security rating and missing AppArmor profile (issue #3).
+ - @hh-here for reporting the dead support links (issue #1).
+ - @backcountrymountains for tracking down the cause of the "Remote I/O error" and reporting a crash in the beta (issue #10).
+ - Anyone who tried the beta.
+
 ### Breaking changes
  - **Dropped support for armhf, armv7 and i386** as these are no longer supported by Home Assistant (since 2025.12).
  - **Supervisor 2026.07.1 or later required.** The Supervisor normally updates itself automatically; check under Settings → System → Updates if you've held it back.
@@ -21,8 +28,7 @@ A large amount of development has also gone into automated testing and builds, w
 
 ### Fixes
  - **Legacy share names have been updated.** `addons` and `addon_configs` are now `local_apps` and `app_configs` respectively. Saved settings are updated automatically, and clients can still mount `/addons` and `/addon_configs`, but these paths are deprecated; you should switch to `/local_apps` and `/app_configs`. `/config` remains unchanged. Thanks to @andremmfaria for raising the folder mapping change in PR #2.
- - **Fixed "Remote I/O error".** NFS 4.1/4.2 clients that checked the share immediately after writing to it could get a "Remote I/O error".
- - **Fixed changing a file's group or owner.** Previously, changing a file's group or owner over NFS (for example `chown` or `rsync -a`) set the group to `root` (0) or failed with "Invalid argument".
+ - **Fixed "Remote I/O error" on Linux 6.19 and later clients.** These clients ask for directory delegations by default, and the old NFS-Ganesha refused in a way the client couldn't handle. Over NFS 4.1/4.2 this caused intermittent "Remote I/O error"s, for example on every second directory listing, or when checking the share right after writing to it. Thanks to @backcountrymountains for tracking down the cause (issue #10).
  - **Changes made on the Home Assistant side are visible immediately.** Configuration edits, new backups and files added by other apps now reach NFS clients straight away. Before, clients would see old content, miss new files and still list deleted ones for up to a minute.
  - **Improved logging.**
    - **Startup failure reason is no longer lost.** NFS-Ganesha now logs straight to the app log. The app exits with NFS-Ganesha's exit code when it stops, so crashes show as errors.
@@ -41,7 +47,9 @@ A large amount of development has also gone into automated testing and builds, w
 ### Under the hood
  - The app is now installed from prebuilt images (amd64 and aarch64) instead of being built on your device, so installs and updates are faster and you run exactly the build that passed our tests.
  - Rebuilt on Debian trixie with nfs-ganesha 9.14 from trixie-backports (was 4.3 on bookworm). Thanks to @morgaroth for the upgrade in PR #4.
- - nfs-ganesha is built from Debian's own 9.14 source package with one upstream fix backported: [commit 6c076b4](https://github.com/nfs-ganesha/nfs-ganesha/commit/6c076b4ea9a963249987daa158808e33910e86e3), which fixes a buffer overflow and missing null-termination in `name2id()`. This is what caused the group and owner bug listed under Fixes.
+ - nfs-ganesha is built from Debian's own 9.14 source package with two upstream fixes backported:
+   - [commit 6c076b4](https://github.com/nfs-ganesha/nfs-ganesha/commit/6c076b4ea9a963249987daa158808e33910e86e3), which fixes a buffer overflow and missing null-termination in `name2id()`. Without it, this version of nfs-ganesha breaks changing a file's group or owner over NFS (for example `chown` or `rsync -a`).
+   - [commit 4357cec](https://github.com/nfs-ganesha/nfs-ganesha/commit/4357cecdd6c311110c4161171c36b661a4dc9614), which fixes a directory cache reference count error. Without it, this version of nfs-ganesha crashes when a client lists a folder while Home Assistant replaces files in it, as it does with its `.storage` files.
  - Fewer privileges: the app no longer needs SYS_ADMIN, and it now runs under its own AppArmor profile (previously AppArmor was disabled). The security rating improves from 2 to 4.
  - The app requests the SYS_RESOURCE capability so NFS-Ganesha can register as an IO flusher, which avoids stalls under memory pressure. It still starts without it. SYS_RESOURCE doesn't affect the security rating.
  - Quieter startup: at `WARN` and below, the app hides the ~45 lines NFS-Ganesha prints about log-level changes at every start.

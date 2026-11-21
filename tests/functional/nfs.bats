@@ -561,6 +561,50 @@ PY
     run ls "$MNT/hostside.txt"; assert_failure
 }
 
+@test "listing a folder while HA replaces its files doesn't crash Ganesha (9.14 chunk fix)" {
+    # HA saves .storage files atomically: it writes a temporary file and
+    # renames it over the old one. A listing that meets the replaced (stale)
+    # file made Debian's 9.14 drop its reference to the cached directory chunk
+    # twice and segfault (issue #10 follow-up; fixed upstream in 4357cecdd).
+    local dir="$WORK/config/storage-race" i crashed=""
+    mkdir -p "$dir"
+    for i in $(seq 1 40); do echo "{}" > "$dir/f$i"; done
+    mount_export /config "vers=4.2"
+    # The first OPEN waits out Ganesha's grace period after a (re)start, so the
+    # 30 s below are all spent on the workload.
+    cat "$MNT/storage-race/f1" > /dev/null
+    local start=$SECONDS
+    (
+        while (( SECONDS - start < 35 )); do
+            i=$((RANDOM % 40 + 1))
+            echo "{\"n\": $RANDOM}" > "$dir/.f$i.tmp" && mv "$dir/.f$i.tmp" "$dir/f$i"
+        done
+    ) &
+    local writer=$!
+    # Checked after every client command: on a dead server each one takes
+    # the soft mount's 15 s timeout.
+    alive() {
+        [ "$(docker inspect -f '{{.State.Running}}' "$NAME")" = true ] && return 0
+        crashed="exit code $(docker inspect -f '{{.State.ExitCode}}' "$NAME"), noticed after $((SECONDS - start)) s"
+        return 1
+    }
+    while (( SECONDS - start < 30 )); do
+        # Files vanish mid-listing by design; only the server's survival counts.
+        ls -l "$MNT/storage-race" > /dev/null 2>&1 || true
+        alive || break
+        cat "$MNT"/storage-race/f* > /dev/null 2>&1 || true
+        alive || break
+    done
+    kill "$writer" 2>/dev/null || true
+    wait "$writer" 2>/dev/null || true
+    rm -rf "$dir"
+    if [ -n "$crashed" ]; then
+        stop_addon
+        start_addon "$AUTHORISED"   # restore for any later tests
+        fail "Ganesha stopped while listing a folder whose files were being replaced ($crashed)"
+    fi
+}
+
 @test "a lock held by one process makes a second process's lock fail (EAGAIN)" {
     # SQLite and other databases on a share depend on working locks.
     mount_export /config
