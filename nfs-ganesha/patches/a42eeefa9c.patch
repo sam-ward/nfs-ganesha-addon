@@ -1,0 +1,26 @@
+From a42eeefa9c7c91ecd40e029f42ef7258f689eada Mon Sep 17 00:00:00 2001
+From: Yoni Couriel <yonic@google.com>
+Date: Thu, 4 Jun 2026 09:46:18 +0000
+Subject: [PATCH] state_lock: Fixed refcount leak.
+
+Change-Id: I6b5bb51d996fb8b233352a8170677900ae8b31bf
+Signed-off-by: Yoni Couriel <yonic@google.com>
+---
+ src/SAL/state_lock.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/SAL/state_lock.c b/src/SAL/state_lock.c
+index d59040f72..38e0649f1 100644
+--- a/src/SAL/state_lock.c
++++ b/src/SAL/state_lock.c
+@@ -3627,6 +3627,7 @@ void state_nfs4_owner_unlock_all(state_owner_t *owner)
+ 			/* Entry and/or export is dying, skip this state,
+ 			 * it will be cleaned up soon enough.
+ 			 */
++			dec_state_t_ref(state);
+ 			continue;
+ 		}
+ 
+-- 
+2.47.3
+

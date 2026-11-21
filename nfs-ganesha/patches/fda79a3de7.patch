@@ -1,0 +1,156 @@
+From fda79a3de77f62547555a56f2bbb241b501adee6 Mon Sep 17 00:00:00 2001
+From: Ofir Vainshtein <ofirvins@google.com>
+Date: Wed, 3 Jun 2026 07:21:56 +0000
+Subject: [PATCH] Refactor: Add bounds-checked fattr comparison in
+ nfs4_Fattr_cmp
+
+Introduced a helper function `fattrs_is_equal` to safely compare portions of fattr4 buffers, including bounds checks. Replaced direct memcmp calls in `nfs4_Fattr_cmp` with calls to this new helper. Also, optimized the FATTR4_ACL comparison to use a single memcmp call for the entire attribute value.
+
+Change-Id: Ifbd2905b8d4e41ffb58f0b43ba7b0b70977443c3
+Signed-off-by: Ofir Vainshtein <ofirvins@google.com>
+---
+ src/Protocols/NFS/nfs_proto_tools.c | 78 ++++++++++++++++-------------
+ 1 file changed, 42 insertions(+), 36 deletions(-)
+
+diff --git a/src/Protocols/NFS/nfs_proto_tools.c b/src/Protocols/NFS/nfs_proto_tools.c
+index 3c28f010d..efb79bd61 100644
+--- a/src/Protocols/NFS/nfs_proto_tools.c
++++ b/src/Protocols/NFS/nfs_proto_tools.c
+@@ -4418,6 +4418,31 @@ bool nfs4_Fattr_Supported(fattr4 *Fattr)
+ 	return true;
+ }
+ 
++/**
++ * @brief Compares two fattr4 buffers.
++ *
++ * @param[in] Fattr1 Pointer to the first fattr4.
++ * @param[in] Fattr2 Pointer to the second fattr4.
++ * @param[in] offset The offset of the attribute in the attribute list.
++ * @param[in] len The length of the attribute to compare.
++ *
++ * @return true if the attributes are equal, false otherwise.
++ *
++ */
++static bool fattrs_is_equal(fattr4 *Fattr1, fattr4 *Fattr2, u_int offset,
++			    u_int len)
++{
++	if (offset + len > Fattr1->attr_vals.attrlist4_len ||
++	    offset + len > Fattr2->attr_vals.attrlist4_len) {
++		LogWarn(COMPONENT_NFS_V4,
++			"Attribute list is too small for comparison");
++		return false;
++	}
++	return memcmp((char *)(Fattr1->attr_vals.attrlist4_val + offset),
++		      (char *)(Fattr2->attr_vals.attrlist4_val + offset),
++		      len) == 0;
++}
++
+ /**
+  *
+  * nfs4_Fattr_cmp: compares 2 fattr4 buffers.
+@@ -4434,7 +4459,6 @@ bool nfs4_Fattr_Supported(fattr4 *Fattr)
+ int nfs4_Fattr_cmp(fattr4 *Fattr1, fattr4 *Fattr2)
+ {
+ 	u_int LastOffset;
+-	uint32_t i;
+ 	u_int len = 0;
+ 	int attr1 = 0, attr2 = 0;
+ 
+@@ -4469,7 +4493,9 @@ int nfs4_Fattr_cmp(fattr4 *Fattr1, fattr4 *Fattr2)
+ 		}
+ 
+ 		if (LastOffset + sizeof(uint32_t) >
+-		    Fattr1->attr_vals.attrlist4_len) {
++			    Fattr1->attr_vals.attrlist4_len ||
++		    LastOffset + sizeof(uint32_t) >
++			    Fattr2->attr_vals.attrlist4_len) {
+ 			/* Minimum attribute size is 4, given fsal_attrlist has
+ 			 * bits set but no values. */
+ 			LogFullDebug(COMPONENT_NFS_V4,
+@@ -4500,11 +4526,8 @@ int nfs4_Fattr_cmp(fattr4 *Fattr1, fattr4 *Fattr2)
+ 			       (char *)(Fattr1->attr_vals.attrlist4_val +
+ 					LastOffset),
+ 			       sizeof(u_int));
+-			if (memcmp((char *)(Fattr1->attr_vals.attrlist4_val +
+-					    LastOffset),
+-				   (char *)(Fattr2->attr_vals.attrlist4_val +
+-					    LastOffset),
+-				   sizeof(u_int)) != 0) {
++			if (!fattrs_is_equal(Fattr1, Fattr2, LastOffset,
++					     sizeof(u_int))) {
+ 				LogFullDebug(
+ 					COMPONENT_NFS_V4,
+ 					"Attr %s wrong len expected %u got %u",
+@@ -4518,21 +4541,14 @@ int nfs4_Fattr_cmp(fattr4 *Fattr1, fattr4 *Fattr2)
+ 			len = htonl(len);
+ 			LastOffset += sizeof(u_int);
+ 
+-			for (i = 0; i < len; i++) {
+-				if (memcmp((char *)(Fattr1->attr_vals
+-							    .attrlist4_val +
+-						    LastOffset),
+-					   (char *)(Fattr2->attr_vals
+-							    .attrlist4_val +
+-						    LastOffset),
+-					   sizeof(uint32_t)) != 0) {
+-					LogFullDebug(COMPONENT_NFS_V4,
+-						     "Wrong value for %s",
+-						     fattr4tab[attr1].name);
+-					return 0;
+-				}
+-				LastOffset += sizeof(uint32_t);
++			if (!fattrs_is_equal(Fattr1, Fattr2, LastOffset,
++					     sizeof(uint32_t) * len)) {
++				LogFullDebug(COMPONENT_NFS_V4,
++					     "Wrong value for %s",
++					     fattr4tab[attr1].name);
++				return 0;
+ 			}
++			LastOffset += sizeof(uint32_t) * len;
+ 
+ 			break;
+ 
+@@ -4544,11 +4560,8 @@ int nfs4_Fattr_cmp(fattr4 *Fattr1, fattr4 *Fattr2)
+ 			       (char *)(Fattr1->attr_vals.attrlist4_val +
+ 					LastOffset),
+ 			       sizeof(u_int));
+-			if (memcmp((char *)(Fattr1->attr_vals.attrlist4_val +
+-					    LastOffset),
+-				   (char *)(Fattr2->attr_vals.attrlist4_val +
+-					    LastOffset),
+-				   sizeof(u_int)) != 0) {
++			if (!fattrs_is_equal(Fattr1, Fattr2, LastOffset,
++					     sizeof(u_int))) {
+ 				LogFullDebug(
+ 					COMPONENT_NFS_V4,
+ 					"Attr %s wrong len expected %u got %u",
+@@ -4561,11 +4574,7 @@ int nfs4_Fattr_cmp(fattr4 *Fattr1, fattr4 *Fattr2)
+ 
+ 			len = ntohl(len); /* xdr marshalling on fattr4 */
+ 			LastOffset += sizeof(u_int);
+-			if (memcmp((char *)(Fattr1->attr_vals.attrlist4_val +
+-					    LastOffset),
+-				   (char *)(Fattr2->attr_vals.attrlist4_val +
+-					    LastOffset),
+-				   len) != 0) {
++			if (!fattrs_is_equal(Fattr1, Fattr2, LastOffset, len)) {
+ 				LogFullDebug(COMPONENT_NFS_V4,
+ 					     "Wrong value for %s",
+ 					     fattr4tab[attr1].name);
+@@ -4628,11 +4637,8 @@ int nfs4_Fattr_cmp(fattr4 *Fattr1, fattr4 *Fattr2)
+ 		case FATTR4_MOUNTED_ON_FILEID:
+ 		case FATTR4_XATTR_SUPPORT:
+ 			/* These are fixed size */
+-			if (memcmp((char *)(Fattr1->attr_vals.attrlist4_val +
+-					    LastOffset),
+-				   (char *)(Fattr2->attr_vals.attrlist4_val +
+-					    LastOffset),
+-				   fattr4tab[attr1].size_fattr4) != 0) {
++			if (!fattrs_is_equal(Fattr1, Fattr2, LastOffset,
++					     fattr4tab[attr1].size_fattr4)) {
+ 				LogFullDebug(COMPONENT_NFS_V4,
+ 					     "Wrong value for %s",
+ 					     fattr4tab[attr1].name);
+-- 
+2.47.3
+

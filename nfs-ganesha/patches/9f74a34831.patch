@@ -1,0 +1,33 @@
+From 9f74a348315e2a12de2a273aafceff8a68965a4d Mon Sep 17 00:00:00 2001
+From: Ofir Vainshtein <ofirvins@google.com>
+Date: Wed, 3 Jun 2026 07:10:15 +0000
+Subject: [PATCH] Add bounds check for NFSv4 attribute index.
+
+In nfs4_check_attr_mask, validate that each attribute index derived from the attribute mask does not exceed FATTR4_MAX_ATTR_INDEX. Log a warning and return false if an out-of-range index is found.
+
+Change-Id: If06631d2b71efe7f3f91684d89c437077a03b869
+Signed-off-by: Ofir Vainshtein <ofirvins@google.com>
+---
+ src/Protocols/NFS/nfs_proto_tools.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/src/Protocols/NFS/nfs_proto_tools.c b/src/Protocols/NFS/nfs_proto_tools.c
+index 59549a750..3c28f010d 100644
+--- a/src/Protocols/NFS/nfs_proto_tools.c
++++ b/src/Protocols/NFS/nfs_proto_tools.c
+@@ -4396,6 +4396,12 @@ bool nfs4_Fattr_Supported(fattr4 *Fattr)
+ 	for (attribute = next_attr_from_bitmap(&Fattr->attrmask, -1);
+ 	     attribute != -1;
+ 	     attribute = next_attr_from_bitmap(&Fattr->attrmask, attribute)) {
++		if (attribute > FATTR4_MAX_ATTR_INDEX) {
++			LogWarn(COMPONENT_NFS_V4,
++				"Attribute index %d is out of range",
++				attribute);
++			return false;
++		}
+ 		bool supported = atrib_supported(attribute, fsal_supported);
+ 
+ 		LogFullDebug(COMPONENT_NFS_V4,
+-- 
+2.47.3
+

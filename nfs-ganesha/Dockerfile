@@ -1,10 +1,12 @@
 # Ganesha comes from trixie-backports (9.x); trixie's own 6.5 returns
-# "Remote I/O error" on the mount root after writes. Debian's 9.14 lacks two
-# upstream fixes, so this stage rebuilds Debian's own source package with
-# them (patches/): 6c076b4ea9 (it reads one byte past NFS owner/group
+# "Remote I/O error" on the mount root after writes. Debian's 9.14 lacks
+# upstream fixes from 9.15/9.16, so this stage rebuilds Debian's own source
+# package with them (patches/, one upstream commit each, named by its hash).
+# Two fix bugs users hit: 6c076b4ea9 (it reads one byte past NFS owner/group
 # strings, which breaks numeric group changes) and 4357cecdd6 (a listing that
 # meets a file replaced outside Ganesha frees a cached directory chunk still
-# in use, and crashes). Drop them once trixie-backports ships both.
+# in use, and crashes). The rest harden request handling and fix leaks.
+# Drop each one once trixie-backports ships it.
 FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a AS ganesha
 ARG GANESHA_VERSION=9.14-1~bpo13+1
 RUN printf '%s\n' 'deb http://deb.debian.org/debian trixie-backports main' \

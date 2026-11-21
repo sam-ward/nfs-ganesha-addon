@@ -1,0 +1,37 @@
+From 20de4beb399a144772e958d48824e60a83e91b17 Mon Sep 17 00:00:00 2001
+From: Ofir Vainshtein <ofirvins@google.com>
+Date: Wed, 3 Jun 2026 07:26:05 +0000
+Subject: [PATCH] Replace assert with a check for memory availability in
+ readdir.
+
+The assert ensuring `mem_avail >= pos_start` has been replaced with an explicit check. If there isn't enough memory, a warning is logged, and the function bails out to the failure path. This prevents potential issues in production builds where asserts are often disabled.
+
+Change-Id: Idc8fead167910b65d0fff47eafd1643f1db70355
+Signed-off-by: Ofir Vainshtein <ofirvins@google.com>
+---
+ src/Protocols/NFS/nfs4_op_readdir.c | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/src/Protocols/NFS/nfs4_op_readdir.c b/src/Protocols/NFS/nfs4_op_readdir.c
+index 2973d3326..be4b3a66a 100644
+--- a/src/Protocols/NFS/nfs4_op_readdir.c
++++ b/src/Protocols/NFS/nfs4_op_readdir.c
+@@ -135,10 +135,14 @@ fsal_errors_t nfs4_readdir_callback(void *opaque, struct fsal_obj_handle *obj,
+ 	bool_t lock_dir = false;
+ 	struct fsal_obj_handle *saved_current_obj = NULL;
+ 
+-	assert(mem_avail >= pos_start);
+ 	LogFullDebug(COMPONENT_NFS_READDIR, "Entry %s pos %d mem_left %d",
+ 		     cb_parms->name, (int)pos_start,
+ 		     (int)(mem_avail - pos_start));
++	if (mem_avail < pos_start) {
++		LogWarn(COMPONENT_NFS_READDIR,
++			"Skipping because not enough space for BASE_ENTRY_SIZE");
++		goto failure;
++	}
+ 
+ 	memset(&args, 0, sizeof(args));
+ 
+-- 
+2.47.3
+
