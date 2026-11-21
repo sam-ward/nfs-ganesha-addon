@@ -322,6 +322,27 @@ PY
     start_addon "$AUTHORISED"
 }
 
+@test "a Ganesha crash logs a backtrace and the signal, and exits with its code" {
+    # Ganesha's crash handler (-C) logs a backtrace at MAJ, so it shows at the
+    # default WARN; the offsets resolve against the build's dbgsym packages.
+    # The kernel still dumps core, so a host with systemd-coredump keeps one
+    # (~1.5 MB; --ulimit core=0 doesn't stop it, and systemd ages them out).
+    stop_addon
+    start_addon "$AUTHORISED"   # default log_level WARN
+    kill -SEGV "$(ganesha_pid)"
+    local i
+    for i in $(seq 1 20); do
+        [ "$(docker inspect -f '{{.State.Running}}' "$NAME")" = true ] || break; sleep 1
+    done
+    run docker inspect -f '{{.State.ExitCode}}' "$NAME"
+    assert_output 139
+    run docker logs "$NAME"
+    assert_output --regexp 'gsh_backtrace :[A-Z ]+:MAJ :/usr/lib/ganesha/libganesha_nfsd\.so\.[0-9.]+\(\+0x[0-9a-f]+\)'
+    assert_output --partial "[NFS] Ganesha exited with code 139 (killed by SIGSEGV)"
+    stop_addon
+    start_addon "$AUTHORISED"
+}
+
 # The harness has no Supervisor, so "auto" resolves from the routing table.
 host_primary_ip() {
     # The source address the host would use to reach the internet (no packets sent).

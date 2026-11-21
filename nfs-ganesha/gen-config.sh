@@ -122,13 +122,16 @@ LOG_LEVEL=$(jq --raw-output '.log_level // "WARN"' "$CONFIG_PATH")
 echo "[NFS] Log level: ${LOG_LEVEL}" >&2
 
 # At WARN and quieter, keep 1.2.x's muting of chatty components. At EVENT and
-# above the user is debugging, so show everything.
+# above the user is debugging, so show everything. INIT stays at MAJ (unless
+# the level is quieter still): Ganesha logs a crash's backtrace as INIT MAJ.
+INIT_LEVEL=MAJ
+case "$LOG_LEVEL" in NULL|FATAL) INIT_LEVEL=$LOG_LEVEL ;; esac
 case "$LOG_LEVEL" in
     NULL|FATAL|MAJ|CRIT|WARN)
         LOG_COMPONENTS="COMPONENTS {
         TIRPC = FATAL;
         NFS_CB = FATAL;
-        INIT = FATAL;
+        INIT = ${INIT_LEVEL};
         DISPATCH = FATAL;
     }" ;;
     *) LOG_COMPONENTS="" ;;

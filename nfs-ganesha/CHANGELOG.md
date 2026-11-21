@@ -33,6 +33,7 @@ A large amount of development has also gone into automated testing and builds, w
  - **Improved logging.**
    - **Startup failure reason is no longer lost.** NFS-Ganesha now logs straight to the app log. The app exits with NFS-Ganesha's exit code when it stops, so crashes show as errors.
    - **Folders that can't be shared are logged.** If NFS-Ganesha can't share one of the selected folders (for example one on an unsupported filesystem), the log now says so (`[ERROR] /media is NOT being shared ...`) while the other folders keep working. Before, clients just got "No such file or directory".
+   - **Crashes are logged with where they happened.** If NFS-Ganesha crashes, the log now includes a backtrace, and the last line names the signal (for example `Ganesha exited with code 139 (killed by SIGSEGV)`). The Documentation's Troubleshooting section says what to include in a report.
    - **Additional startup information logged.** The log now always starts with the app and NFS-Ganesha versions, so a pasted log shows exactly what is running.
  - **Stopping the app shuts NFS-Ganesha down cleanly**, including while it's still starting up, instead of it being force-killed after 10 seconds.
 

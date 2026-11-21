@@ -91,6 +91,17 @@ gen_json() {
         ${2:+"$BATS_TEST_DIRNAME/fixtures/network/$2.json"}
 }
 
+@test "log_level WARN keeps INIT at MAJ, where Ganesha logs crash backtraces" {
+    run --separate-stderr gen warn
+    assert_output --partial 'INIT = MAJ;'
+}
+
+@test "log_level FATAL keeps INIT no louder than FATAL" {
+    run --separate-stderr gen_json '{"authorized_ips":["192.168.1.0/24"],"export_folders":["config"],"log_level":"FATAL"}'
+    assert_success
+    assert_output --partial 'INIT = FATAL;'
+}
+
 @test "missing folder is skipped with a warning, others still exported" {
     rmdir "$ROOT/media"
     run --separate-stderr gen_json '{"authorized_ips":["192.168.1.0/24"],"export_folders":["config","media"]}'

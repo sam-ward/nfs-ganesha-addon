@@ -238,6 +238,13 @@ Windows' built-in NFS client ("Services for NFS") only supports NFSv3, and this 
    - Look for errors or warnings
    - For more detail, set `log_level` to `DEBUG`, restart the app and try again
 
+### The app stopped unexpectedly
+
+If the log ends with `Ganesha exited with code ...` and a name such as `(killed by SIGSEGV)`, NFS-Ganesha crashed. The lines just above, marked `gsh_backtrace`, show where.
+
+- Report it with the whole log, the app version and your architecture (amd64 or aarch64); the backtrace lines are what's needed to find the cause.
+- Turn on the Watchdog switch on the app's Info tab so Home Assistant restarts the app after a crash.
+
 ### `showmount -e` doesn't work
 
 **This is expected.** The app runs in host network mode where `showmount` may not function properly.

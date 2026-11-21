@@ -131,7 +131,9 @@ LOG_FIFO=/tmp/ganesha-log.fifo
 rm -f "$LOG_FIFO" && mkfifo "$LOG_FIFO"
 if [ -n "$LOG_FILTER" ]; then grep --line-buffered -vF "$LOG_FILTER" < "$LOG_FIFO" || true; else cat < "$LOG_FIFO"; fi &
 FILTER_PID=$!
-/usr/bin/ganesha.nfsd -F -L STDOUT -N "NIV_${LOG_LEVEL}" -f "$CONF" > "$LOG_FIFO" 2>&1 &
+# -C turns on Ganesha's crash handler: on a crash it logs a backtrace (at MAJ,
+# so even at WARN), then dumps core as before. It does nothing otherwise.
+/usr/bin/ganesha.nfsd -F -C -L STDOUT -N "NIV_${LOG_LEVEL}" -f "$CONF" > "$LOG_FIFO" 2>&1 &
 GANESHA_PID=$!
 
 # Ganesha carries on without an export it can't create (for example a folder
@@ -173,5 +175,10 @@ fi
 trap '' TERM INT
 wait "$FILTER_PID" || true
 
-echo "[NFS] Ganesha exited with code ${RC}"
+# Above 128 the shell's code means a signal (139 = 128 + SIGSEGV): name it.
+if [ "$RC" -gt 128 ] && SIG=$(kill -l "$((RC - 128))" 2>/dev/null); then
+    echo "[NFS] Ganesha exited with code ${RC} (killed by SIG${SIG})"
+else
+    echo "[NFS] Ganesha exited with code ${RC}"
+fi
 exit "$RC"
