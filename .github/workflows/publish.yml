@@ -93,6 +93,8 @@ jobs:
             io.hass.name=NFS Server (Ganesha)
             io.hass.description=Expose Home Assistant folders via NFS using nfs-ganesha
             io.hass.url=https://github.com/sam-ward/nfs-ganesha-addon
+            org.opencontainers.image.description=Expose Home Assistant folders via NFS using nfs-ganesha
+            org.opencontainers.image.licenses=MIT
           container-registry-password: ${{ secrets.GITHUB_TOKEN }}
           load: "true"
           push: "false"
