@@ -27,6 +27,7 @@ on:
       - nfs-ganesha/Dockerfile
       - nfs-ganesha/patches/**
       - scripts/release-check.sh
+      - scripts/export-dbgsym.sh
 
 permissions:
   contents: read
@@ -111,6 +112,19 @@ jobs:
           name: publish-addon-log-${{ matrix.arch }}
           path: .test-logs/addon.log
           if-no-files-found: ignore
+
+      # The debug symbols for this exact image (the script checks the build
+      # IDs), so a crash backtrace in a user's log can be resolved to source
+      # lines with gdb.
+      - name: Export the debug symbols
+        run: scripts/export-dbgsym.sh "$IMAGE" "$RUNNER_TEMP/dbgsym"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dbgsym-${{ needs.prepare.outputs.version }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/dbgsym/*.deb
+          if-no-files-found: error
+          retention-days: 90
 
       # Pushes the image the tests ran against rather than building it again,
       # then signs the pushed digest, as the builder does when it pushes.

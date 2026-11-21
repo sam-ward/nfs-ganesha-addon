@@ -30,6 +30,12 @@ RUN for p in debian/patches/addon/*.patch; do echo "addon/${p##*/}" >> debian/pa
         tail -50 /build/build.log; exit 1; \
     fi
 
+# Debug symbols for the packages above, kept out of the app's image. The
+# publish workflow exports them (scripts/export-dbgsym.sh) so a crash
+# backtrace from the app log can be resolved to source lines.
+FROM scratch AS dbgsym
+COPY --from=ganesha /build/nfs-ganesha-dbgsym_*.deb /build/nfs-ganesha-vfs-dbgsym_*.deb /
+
 FROM debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a
 
 # Install Ganesha (the packages built above; libntirpc from trixie-backports),
