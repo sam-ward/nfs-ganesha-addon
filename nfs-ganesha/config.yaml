@@ -1,44 +1,49 @@
 name: NFS Server (Ganesha)
-version: "1.2.1"
+version: "2.0.0"
 slug: nfs_ganesha
 description: Expose Home Assistant folders via NFS using nfs-ganesha
 url: https://github.com/sam-ward/nfs-ganesha-addon
+# Prebuilt images, published by .github/workflows/publish.yml and tested
+# before they're pushed; the Supervisor pulls these instead of building.
+image: ghcr.io/sam-ward/{arch}-addon-nfs_ganesha
+# 2.0.0 changes the defaults for installs that never saved their options (see
+# the CHANGELOG), so the Supervisor won't auto-update across it: users update
+# by hand, after seeing the changelog.
+breaking_versions:
+  - "2.0.0"
 startup: system
 arch:
   - aarch64
   - amd64
-  - armhf
-  - armv7
-  - i386
 init: false
+# Current Supervisor map names, as the Samba add-on uses them. They mount at
+# /homeassistant, /local_apps and /app_configs; gen-config.sh exports them
+# to clients as /config, /local_apps and /app_configs.
 map:
-  - config:rw
+  - homeassistant_config:rw
   - ssl:rw
-  - addons:rw
-  - all_addon_configs:rw
+  - local_apps:rw
+  - all_app_configs:rw
   - backup:rw
   - share:rw
   - media:rw
 host_network: true
+# Read-only access to /network/info, to resolve authorized_ips "auto".
+hassio_api: true
 privileged:
-  - SYS_ADMIN
   - DAC_READ_SEARCH
-apparmor: false
+  - SYS_RESOURCE
 options:
   authorized_ips:
-    - "10.0.0.0/8"
-    - "172.16.0.0/12"
-    - "192.168.0.0/16"
+    - auto
   export_folders:
-    - config
-    - ssl
-    - addons
-    - addon_configs
-    - backup
     - share
     - media
+    - backup
+  log_level: WARN
 schema:
   authorized_ips:
     - str
   export_folders:
-    - match(config|ssl|addons|addon_configs|backup|share|media)
+    - list(config|ssl|local_apps|app_configs|backup|share|media|addons|addon_configs)
+  log_level: list(NULL|FATAL|MAJ|CRIT|WARN|EVENT|INFO|DEBUG|MID_DEBUG|FULL_DEBUG)?

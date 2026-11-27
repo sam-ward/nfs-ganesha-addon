@@ -1,0 +1,43 @@
+From 5a38655d34b5f5b0d977d9ee005d298cf73d9046 Mon Sep 17 00:00:00 2001
+From: Yoni Couriel <yonic@google.com>
+Date: Thu, 4 Jun 2026 09:55:19 +0000
+Subject: [PATCH] nfs4_owner: Fixed refcount leak.
+
+Change-Id: Ia3437cd29d68408088f7ac3064d4996c396304ab
+Signed-off-by: Yoni Couriel <yonic@google.com>
+---
+ src/SAL/nfs4_owner.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/src/SAL/nfs4_owner.c b/src/SAL/nfs4_owner.c
+index c3353c08b..5db56ffcd 100644
+--- a/src/SAL/nfs4_owner.c
++++ b/src/SAL/nfs4_owner.c
+@@ -536,7 +536,7 @@ nfsstat4 Process_nfs4_conflict(LOCK4denied *denied, state_owner_t *holder,
+ 	status = check_resp_room(data, BASE_RESP_SIZE + owner_len);
+ 
+ 	if (status != NFS4_OK)
+-		return status;
++		goto out;
+ 
+ 	/* Now set the op_resp_size. */
+ 	data->op_resp_size = BASE_RESP_SIZE + owner_len;
+@@ -574,11 +574,14 @@ nfsstat4 Process_nfs4_conflict(LOCK4denied *denied, state_owner_t *holder,
+ 	else
+ 		denied->owner.clientid = 0;
+ 
++	status = NFS4ERR_DENIED;
++
++out:
+ 	/* Release any lock owner reference passed back from SAL */
+ 	if (holder != NULL)
+ 		dec_state_owner_ref(holder);
+ 
+-	return NFS4ERR_DENIED;
++	return status;
+ }
+ 
+ /**
+-- 
+2.47.3
+

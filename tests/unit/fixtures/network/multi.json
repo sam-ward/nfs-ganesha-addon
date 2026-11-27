@@ -1,0 +1,1 @@
+{"source":"Supervisor","interfaces":[{"interface":"eth1","connected":true,"primary":false,"ipv4":{"address":["192.168.50.2/24"]}},{"interface":"eth0","connected":true,"primary":true,"ipv4":{"address":["172.16.5.10/16"]}}]}

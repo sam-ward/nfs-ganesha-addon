@@ -1,0 +1,1 @@
+{"source":"Supervisor","interfaces":[{"interface":"wlan0","type":"wireless","enabled":true,"connected":true,"primary":true,"ipv4":{"method":"auto","address":["10.0.5.23/22"],"gateway":"10.0.4.1"}}]}

@@ -1,0 +1,114 @@
+#include <tunables/global>
+
+# AppArmor profile for the NFS Server (Ganesha) app. The Supervisor loads it
+# under the app's slug in place of its default profile. The startup scripts run
+# in the main profile; ganesha.nfsd runs in the tighter "ganesha" child profile.
+profile nfs_ganesha flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+  #include <abstractions/nameservice>
+
+  # Startup: run.sh and the helpers it calls
+  /run.sh rix,
+  /gen-config.sh rix,
+  /migrate-options.sh rix,
+  /usr/bin/bash ix,
+  /dev/tty rw,
+  /usr/bin/{cat,cp,grep,head,jq,mkdir,mkfifo,paste,rm,sed,sleep} ix,
+  # Docker HEALTHCHECK (an NFS NULL call to 127.0.0.1:2049)
+  /healthcheck.sh rix,
+  /usr/bin/{od,timeout,tr} ix,
+  # Process substitution feeding Ganesha's log filter
+  @{PROC}/*/fd/* rw,
+  # rm of the stale D-Bus pid file in /run/dbus (owned by messagebus)
+  capability dac_override,
+
+  # Supervisor API (option migration, authorized_ips "auto") and routing table
+  /usr/bin/curl ix,
+  /usr/{,s}bin/ip ix,
+  /usr/share/iproute2/{,**} r,
+  /etc/iproute2/{,**} r,
+  network inet stream,
+  network netlink raw,
+
+  # Options, generated config, scratch files
+  /data/** r,
+  /tmp/** rw,
+  /etc/ganesha/{,**} rw,
+  /run/{,**} rwk,
+
+  # D-Bus system bus, which Ganesha registers on
+  /usr/bin/dbus-daemon ix,
+  # Asking Ganesha which exports exist (run.sh's startup check)
+  /usr/bin/dbus-send ix,
+  capability setuid,
+  capability setgid,
+  /usr/share/dbus-1/{,**} r,
+  /etc/dbus-1/{,**} r,
+  @{PROC}/*/mounts r,
+  @{PROC}/*/fdinfo/* r,
+  @{PROC}/*/cmdline r,
+  # Unix sockets: "network unix" for older AppArmor, "unix" for newer.
+  network unix stream,
+  unix (create, bind, listen, accept, connect, send, receive, getattr, getopt, setopt, shutdown) type=stream,
+
+  # Stop Ganesha when the Supervisor stops the app
+  signal (send) set=(term, int),
+
+  /usr/bin/ganesha.nfsd cx -> ganesha,
+
+  profile ganesha flags=(attach_disconnected,mediate_deleted) {
+    #include <abstractions/base>
+    #include <abstractions/nameservice>
+
+    signal (receive),
+
+    # From config.yaml's privileged list: reopening files by handle, and
+    # registering as an IO flusher.
+    capability dac_read_search,
+    capability sys_resource,
+    # Serving files as the (squashed) client: per-request groups, and acting
+    # on files owned by other users (write, chmod, chown, and keeping the
+    # setgid bit when chmod-ing a file or folder of another group).
+    capability setgid,
+    capability dac_override,
+    capability fowner,
+    capability chown,
+    capability fsetid,
+
+    network inet stream,
+    network inet dgram,
+    network inet6 stream,
+    network inet6 dgram,
+    # D-Bus (see the unix socket note above)
+    network unix stream,
+    unix (create, connect, send, receive, getattr, getopt, setopt, shutdown) type=stream,
+
+    /usr/bin/ganesha.nfsd rm,
+    /usr/lib/ganesha/** mr,
+    # Startup: finds the filesystems to export (their device, for the export's
+    # fsid, which clients' file handles depend on), and checks lock support.
+    # Ganesha also opens other mounts it finds; those aren't needed. (It is
+    # also denied the POSIX mqueue mount, without a rule: mqueue rules need a
+    # newer AppArmor than every HAOS may have.)
+    @{PROC}/*/mounts r,
+    / r,
+    /dev/ r,
+    /sys/devices/**/ r,
+    deny /dev/pts/ r,
+    /tmp/ganesha.nfsd.locktest* rw,
+    /etc/ganesha/** r,
+    /etc/idmapd.conf rk,
+    /etc/gss/{,**} r,
+    /run/{,**} rwk,
+    /var/lib/nfs/{,**} rwk,
+
+    # The shared folders. FSAL_VFS reopens files by handle (hence
+    # dac_read_search), and AppArmor names those opens by their path on the
+    # host filesystem, which differs per system, so the shared folders can't
+    # be named here. File access is as open as Docker's default profile;
+    # capabilities, network and exec stay confined.
+    /** rwlk,
+    deny @{PROC}/** w,
+    deny /sys/** w,
+  }
+}

@@ -11,10 +11,13 @@ else
 RUN = docker run --rm -v "$(CURDIR):$(CURDIR)" -w "$(CURDIR)" \
 	--user "$$(id -u):$$(id -g)" $(TOOLBOX)
 # Functional tests mount NFS and drive the host's Docker, so they run as root,
-# privileged, on the host network.
+# privileged, on the host network. They see host PIDs so they can inspect the
+# add-on's processes from outside (docker exec would run under its AppArmor profile).
+# IMAGE and SKIP_BUILD (when set) make it test a given image, e.g. the exact
+# image the publish workflow is about to push.
 RUN_PRIV = docker run --rm -v "$(CURDIR):$(CURDIR)" -w "$(CURDIR)" \
-	--privileged --network host -v /var/run/docker.sock:/var/run/docker.sock \
-	$(TOOLBOX)
+	--privileged --network host --pid host -v /var/run/docker.sock:/var/run/docker.sock \
+	-e IMAGE -e SKIP_BUILD $(TOOLBOX)
 endif
 
 .PHONY: toolbox lint unit functional test clean
@@ -25,8 +28,8 @@ ifneq ($(IN_TOOLBOX),1)
 endif
 
 lint: toolbox
-	$(RUN) shellcheck nfs-ganesha/*.sh $(wildcard scripts/*.sh tests/functional/*.bash)
-	$(RUN) hadolint --config .hadolint.yaml nfs-ganesha/Dockerfile tests/toolbox/Dockerfile
+	$(RUN) shellcheck nfs-ganesha/*.sh $(wildcard scripts/*.sh tests/functional/*.bash tests/haos/*.sh)
+	$(RUN) hadolint --config .hadolint.yaml nfs-ganesha/Dockerfile tests/toolbox/Dockerfile tests/haos/Dockerfile
 	$(RUN) yamllint .
 	$(RUN) scripts/check-version.sh
 
@@ -42,3 +45,5 @@ test: lint unit functional
 clean: toolbox
 	-docker rm -f nfs-ganesha-functional > /dev/null 2>&1
 	$(RUN_PRIV) rm -rf .test-work .test-logs
+	-$(RUN_PRIV) sh -c '[ -d /sys/kernel/security/apparmor ] || mount -t securityfs securityfs /sys/kernel/security; \
+		printf nfs_ganesha_test > /sys/kernel/security/apparmor/.remove' 2>/dev/null

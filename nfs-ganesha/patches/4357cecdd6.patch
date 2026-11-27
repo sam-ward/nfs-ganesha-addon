@@ -1,0 +1,41 @@
+From 4357cecdd6c311110c4161171c36b661a4dc9614 Mon Sep 17 00:00:00 2001
+From: Shahar Hochma <shaharhoch@google.com>
+Date: Thu, 4 Jun 2026 11:37:46 +0000
+Subject: [PATCH] Fix dir chunk ref count leak
+
+A recent change added a skip to a failure flow, but it called `mdcache_lru_unref_chunk` before the skip, but if we goto skip, we also unref the chunk there.
+
+This causes us to to dec-ref the chunk twice and release it while other dirs still reference to it.
+This can cause us memory corruption.
+
+Change-Id: I685b8e6977deeaa670cd80ebed041e79c8039252
+Signed-off-by: Shahar Hochma <shaharhoch@google.com>
+---
+ src/FSAL/Stackable_FSALs/FSAL_MDCACHE/mdcache_helpers.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/FSAL/Stackable_FSALs/FSAL_MDCACHE/mdcache_helpers.c b/src/FSAL/Stackable_FSALs/FSAL_MDCACHE/mdcache_helpers.c
+index 5397fd2b5..cd1cd5043 100644
+--- a/src/FSAL/Stackable_FSALs/FSAL_MDCACHE/mdcache_helpers.c
++++ b/src/FSAL/Stackable_FSALs/FSAL_MDCACHE/mdcache_helpers.c
+@@ -3303,8 +3303,6 @@ again:
+ 		status = entry->obj_handle.obj_ops->getattrs(&entry->obj_handle,
+ 							     &attrs);
+ 		if (FSAL_IS_ERROR(status)) {
+-			mdcache_lru_unref_chunk(chunk);
+-
+ 			LogFullDebugAlt(COMPONENT_NFS_READDIR,
+ 					COMPONENT_MDCACHE,
+ 					"getattrs failed status=%s",
+@@ -3323,6 +3321,8 @@ again:
+ 					     "Skip stale entry & status reset");
+ 				goto skip;
+ 			}
++
++			mdcache_lru_unref_chunk(chunk);
+ 			PTHREAD_RWLOCK_unlock(&directory->content_lock);
+ 			return status;
+ 		}
+-- 
+2.47.3
+

@@ -24,3 +24,6 @@ QUICKREF.md
 # Functional test scratch and logs
 .test-work/
 .test-logs/
+
+# HAOS test VM (tests/haos/haos-vm.sh)
+.test-haos/
