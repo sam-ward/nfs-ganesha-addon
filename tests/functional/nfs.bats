@@ -626,6 +626,22 @@ PY
     fi
 }
 
+@test "a SEQUENCE whose reply can't be cached leaves its slot alone (9.14 slot fix)" {
+    # Debian's 9.14 stored a failed SEQUENCE's reply in the session slot after
+    # letting go of it, which a concurrent DESTROY_SESSION turns into a write
+    # to freed memory (fixed upstream in 5ec52b7723). Session operations need
+    # no export, so any host that reaches port 2049 can do this, authorised or
+    # not. The script retries the failed sequence id: only an empty slot
+    # answers NFS4ERR_RETRY_UNCACHED_REP.
+    run python3 -I "$BATS_TEST_DIRNAME/nfs41-slot-replay.py"
+    assert_success
+    assert_line "create_session NFS4_OK"
+    assert_line "sequence_1 NFS4_OK"
+    assert_line "sequence_2_cachethis NFS4ERR_REP_TOO_BIG_TO_CACHE"
+    assert_line "retry_2 NFS4ERR_RETRY_UNCACHED_REP"
+    [ "$(docker inspect -f '{{.State.Running}}' "$NAME")" = true ]
+}
+
 @test "a lock held by one process makes a second process's lock fail (EAGAIN)" {
     # SQLite and other databases on a share depend on working locks.
     mount_export /config

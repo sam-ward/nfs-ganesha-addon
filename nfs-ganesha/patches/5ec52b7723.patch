@@ -1,0 +1,37 @@
+From 5ec52b772336709662bc3813270a8a52f71efc78 Mon Sep 17 00:00:00 2001
+From: Roy Babayov <roybabayov@google.com>
+Date: Tue, 10 Nov 2026 20:16:16 +0000
+Subject: [PATCH] Don't cache a reply in a slot that SEQUENCE no longer holds
+
+- When SEQUENCE fails its reply size check, it drops the slot lock and
+  the session reference but leaves the slot set for caching the reply.
+- The end of the request then writes the reply into that slot without
+  the lock, so a concurrent DESTROY_SESSION can free the slot first and
+  the write hits freed memory.
+- Clear the slot and the cache flag before dropping the lock, so a
+  failed SEQUENCE caches nothing.
+
+Change-Id: Ib0b2337b32193d97eb11a363225ca68a5173a537
+Signed-off-by: Roy Babayov <roybabayov@google.com>
+---
+ src/Protocols/NFS/nfs4_op_sequence.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/src/Protocols/NFS/nfs4_op_sequence.c b/src/Protocols/NFS/nfs4_op_sequence.c
+index 169da95e17..cda2296068 100644
+--- a/src/Protocols/NFS/nfs4_op_sequence.c
++++ b/src/Protocols/NFS/nfs4_op_sequence.c
+@@ -394,6 +394,13 @@ enum nfs_req_result nfs4_op_sequence(struct nfs_argop4 *op,
+ 		/* Indicate the failed response size. */
+ 		data->op_resp_size = sizeof(nfsstat4);
+ 
++		/* Don't let complete_nfs4_compound() cache the reply in the
++		 * slot: after we drop the slot lock and the session reference,
++		 * the slot can be freed with its session.
++		 */
++		data->sa_cachethis = false;
++		data->slot = NULL;
++
+ 		PTHREAD_MUTEX_unlock(&slot->slot_lock);
+ 
+ 		dec_session_ref(session);
